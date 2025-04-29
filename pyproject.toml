@@ -1,0 +1,95 @@
+[build-system]
+requires = ["setuptools>=70.1", "setuptools-scm>=8.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vha"
+readme = "README.md"
+requires-python = ">=3.9"
+dynamic = ["version"]
+dependencies = [
+    # These are the new dependencies:
+    "numpy<2.0", # qiskit 1.1 does not work with numpy 2.0 because of rustworkx
+    "pyscf>=2.6;sys_platform=='linux'",
+    "qiskit>=1.1",
+    "qiskit_algorithms>=0.3",
+    "qiskit_nature>=0.7.2",
+    "qiskit_ibm_runtime>=0.24.1",
+    "nlopt~=2.7",
+]
+
+[project.optional-dependencies]
+# plot = ["matplotlib>=3.9"]
+develop = [
+    "black[jupyter]>=24.4",
+    "mypy>=1.10",
+    "nox>=2024.4",
+    "pytest>=8.2",
+    "ruff>=0.4",
+]
+
+[project.urls]
+repository = "https://gitlab.cc-asp.fraunhofer.de/qc/vha"
+
+[tool.setuptools]
+py-modules = ["vha"]
+
+[tool.setuptools_scm]
+write_to = "vha/__version__.py"
+
+[tool.black]
+line-length = 100
+target-version = ["py311", "py312"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.mypy]
+follow_imports = "silent"
+ignore_missing_imports = true
+show_column_numbers = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+exclude = ['tests/', 'examples/']
+
+[tool.ruff]
+target-version = "py312"
+line-length = 110
+[tool.ruff.lint]
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+extend-select = [
+    "E",
+    "F",
+    "W",
+    "I",
+    "N",
+    "D",
+    "UP",
+    "ANN",
+    "S",
+    "B",
+    "A",
+    "C4",
+    "ISC",
+    "ICN",
+    "G",
+    "PIE",
+    "RET",
+    "SLF",
+    "SIM",
+    "ARG",
+    "PTH",
+    "RUF",
+]
+ignore = ["D208", "D209", "ANN101", "ANN102", "SIM105"]
+[tool.ruff.lint.pycodestyle]
+ignore-overlong-task-comments = true
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["*test*.py"]

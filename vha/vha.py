@@ -1,0 +1,661 @@
+"""Variational Hamiltonian Ansatz.
+
+Implemented by Clemens Possel.
+"""
+
+from __future__ import annotations
+
+import logging
+import sys
+from enum import StrEnum
+
+import numpy as np
+from IPython.display import Latex, display
+from qiskit import QuantumCircuit
+from qiskit.circuit import ParameterExpression, ParameterVector
+from qiskit.circuit.library import BlueprintCircuit, PauliEvolutionGate
+from qiskit.circuit.parameter import Parameter
+from qiskit.circuit.quantumregister import QuantumRegister
+from qiskit.exceptions import QiskitError
+from qiskit.synthesis import LieTrotter, SuzukiTrotter
+from qiskit_nature.second_q.circuit.library import HartreeFock
+from qiskit_nature.second_q.hamiltonians import ElectronicEnergy
+from qiskit_nature.second_q.mappers import JordanWignerMapper, ParityMapper
+from qiskit_nature.second_q.mappers.fermionic_mapper import FermionicMapper
+from qiskit_nature.second_q.operators import ElectronicIntegrals
+from qiskit_nature.second_q.problems import ElectronicStructureProblem
+
+from vha.fermionic_operator import FermionicOp
+
+# from .fermionic_operator import FermionicOp
+
+logger = logging.getLogger(__name__)
+
+
+class ThresholdMethods(StrEnum):
+    """Threshold methods for filtering of terms in the Hamiltonian."""
+
+    COEFF_VALUE = "coeff_value"
+    NUM_OF_COEFFS = "num_of_coeffs"
+
+
+class VHA(BlueprintCircuit):
+    """Implements Variational Hamiltonian Ansatz (VHA).
+
+    Implements the Variational Hamiltonian Ansatz (VHA) as well as its variation, the
+    truncated Variational Hamiltonian Ansatz (tVHA).
+
+    VHA consists of alternating layers of Fock operator (known ground state Hamiltonian) and
+    full Hamiltonian.
+    In this implementation, the full Hamiltonian is split into one-body terms, Coulombic two-body
+    terms, and the remaining two-body terms, referred to as complex two-body terms.
+    Truncation in tVHA is performed on the complex two-body terms since their circuit representation
+    consists of multiple CNOT gates and is thus the most problematic part on NISQ devices.
+
+    For further information about the theory behind (adiabatic evolution) see
+    https://arxiv.org/pdf/quant-ph/0001106.pdf
+    Nice overview of adiabatic theory for quantum computing:
+    https://cs269q.stanford.edu/lectures/adiabatic_note.pdf
+    """
+
+    def __init__(
+        self,
+        problem: ElectronicStructureProblem,
+        mapper: FermionicMapper | None,
+        discretization_steps: int = 1,
+        threshold_gamma: float = 1.0,
+        threshold_method: str = "coeff_value",
+        trotterization_order: int = 1,
+        name: str | None = "VHA",
+        insert_barriers: bool = False,
+    ) -> None:
+        """Variational Hamiltonian Ansatz.
+
+        Initializes Variational Hamiltonian Ansatz (VHA) as well as its variation, the
+        truncated Variational Hamiltonian Ansatz (tVHA).
+
+        Args:
+            problem: The representation of the molecule as ElectronicStructureProblem
+            mapper: maps fermionic operators to qubit operators.
+            discretization_steps: Number of steps to discretize the adiabatic time evolution.
+                In the limit of infinite disretization steps the adiabatic theorem guarantees
+                to yield the ground state of the final Hamiltonian.
+            threshold_gamma: Threshold for filtering terms in the Hamiltonian H_γ
+                for construction of the ansatz circuit.
+                A threshold of 0.9 means that 90% are considered.
+                The terms are sorted based on the coefficient value (or rather `abs(coeff_value)`)
+                before applying the threshold.
+                The terms are filtered such that terms are added until
+                `threshold*sum(coeff_values)` is reached; due to the calculation method
+                the final threshold might be (potentially significantly) larger than
+                the initial threshold argument; for larger molecules, these deviations should
+                become smaller due to the large number of terms in the Hamiltonian.
+                If a threshold_gamma of 1 (i.e. 100%) is chosen, this resembles the VHA algorithm;
+                any other threshold_gamma means that the tVHA algorithm is implemented.
+            threshold_method: Method used for the threshold. All methods sort the terms based on
+                the coefficient value (or rather `abs(coeff_value)`) before applying the threshold.
+                Thus, the terms with the largest absolute value are always included.
+                "coeff_value" means that the terms are filtered such that terms are added until
+                    `threshold*sum(coeff_values)` is reached; due to the calculation method
+                    the final threshold might be (potentially significantly) larger than
+                    the initial threshold argument.
+                "num_of_coeffs" means that the terms are filtered based on the number of
+                    coefficients. A number of e.g. 8 terms and a threshold of 0.25 would yield
+                    round(8*0.25) = 2 terms. The final threshold returned by this method is
+                    determined in the same way as in the 'coeff_value' method,
+                    i.e. the absolute values of the filtered terms are summed up and
+                    divided by the overall sum of absoulute values of the unfiltered terms.
+            trotterization_order: Scheme to expand exponentiation of non-commuting operators;
+                typically 1st order trotterization exp(A+B)/approx exp(A)*exp(B) is sufficient.
+                Increasing the number of discretization steps is most likely more efficient
+                to yield higher accuracy.
+            name: Name of the block in the overall circuit.
+            insert_barriers: Whether to insert barriers between different building blocks.
+                Solely for visualization purposes.
+        """  # noqa: RUF002
+        self.problem = problem
+        if isinstance(mapper, ParityMapper):
+            raise ValueError("ParityMapper is not supported yet.")
+        self.mapper = mapper or JordanWignerMapper()
+        self.trotterization_order = trotterization_order
+        self._electronic_energy = self.problem.hamiltonian
+
+        if not isinstance(discretization_steps, int) or discretization_steps < 1:
+            raise ValueError(
+                f"Invalid number of layers: {discretization_steps}. Specify a positive integer."
+            )
+        self.discretization_steps = discretization_steps
+
+        self.hamilton_operator = self.get_hamilton_operator()
+        self.fock_operator = self.get_fock_operator()
+        self._interaction_hamiltonian = self._get_interaction_hamiltonian()
+        self._hamiltonian_alpha = self._get_hamiltonian_alpha()
+        self._hamiltonian_beta = self._get_hamiltonian_beta()
+        self._hamiltonian_gamma, self.final_threshold_gamma = self._get_hamiltonian_gamma(
+            threshold_gamma=threshold_gamma, threshold_method=threshold_method
+        )
+
+        self.insert_barriers = insert_barriers
+        self._alpha_parameter_vector = ParameterVector(
+            name="α", length=self.discretization_steps  # noqa: RUF001
+        )
+        self._beta_parameter_vector = ParameterVector(name="β", length=self.discretization_steps)
+        self._gamma_parameter_vector = ParameterVector(
+            name="γ", length=self.discretization_steps  # noqa: RUF001
+        )
+        self.preferred_initial_parameters = self._get_preferred_initial_parameters()
+
+        super().__init__(name=name)
+
+        self._num_qubits: int | None = None
+        self.num_qubits = self.problem.num_spin_orbitals  # type: ignore
+
+    @property
+    def num_qubits(self) -> int:
+        """Returns the number of qubits in this circuit.
+
+        Returns:
+            The number of qubits.
+        """
+        return self._num_qubits if self._num_qubits is not None else 0
+
+    @num_qubits.setter
+    def num_qubits(self, num_qubits: int) -> None:
+        """Set the number of qubits for the n-local circuit.
+
+        Args:
+            num_qubits: The new number of qubits.
+        """
+        if self._num_qubits != num_qubits:
+            # invalidate the circuit
+            self._invalidate()
+            self._num_qubits = int(num_qubits)
+            self.qregs = [QuantumRegister(num_qubits, name="q")]
+
+    def get_hamilton_operator(self) -> FermionicOp:
+        """Returns the Hamiltonian of the systems.
+
+        Be aware, that qiskit notation sees an ElectronicEnergy object as "Hamiltonian" while
+        this method returns a FermionicOp object (i.e. the "pure" Hamilton operator).
+
+        The Hamiltonian is optimized in the sense that the amount of terms is reduced based
+        on information redundancies (due to antisymmetric and hermitian properties).
+        """
+        hamilton_operator = self._electronic_energy.second_q_op().get_compressed_hamiltonian()
+        if not hamilton_operator.is_hermitian():
+            raise ValueError("Hamiltonian is not hermitian.")
+        return hamilton_operator
+
+    def get_fock_operator(self) -> FermionicOp:
+        """Returns the Fock operator (typically associated with parameter 'alpha' in VHA)."""
+        density = ElectronicIntegrals.from_raw_integrals(
+            np.diag(self.problem.orbital_occupations),  # type: ignore
+            h1_b=np.diag(self.problem.orbital_occupations_b),  # type: ignore
+        )
+        fock_operator = (
+            ElectronicEnergy(self._electronic_energy.fock(density=density))
+            .second_q_op()
+            .simplify(atol=1e-7)  # some non-diagonal terms in LiH example tend to be around 1.2e-8
+        )
+        fock_operator._data = {  # noqa: SLF001
+            label: coeff.real for label, coeff in fock_operator.items()
+        }
+        if not fock_operator.is_diagonal():
+            raise ValueError("The fock operator is not diagonal! Please check the code for bugs.")
+        return fock_operator
+
+    def _get_interaction_hamiltonian(self) -> FermionicOp:
+        """Returns the interaction Hamiltonian.
+
+        Full Hamiltonian minus Fock operator. Thus, one-body and two-body terms are present.
+        This Hamiltonian is not used directly to create any circuit but as an intermediate to get
+        H_β and H_γ.
+        """  # noqa: RUF002
+        interaction_hamiltonian = self.hamilton_operator - self.fock_operator
+        interaction_hamiltonian = interaction_hamiltonian.get_compressed_hamiltonian()
+
+        # Sanity check if the Hamiltonian is initialized correctly until this point
+        if not interaction_hamiltonian.is_hermitian():
+            raise ValueError("Interaction Hamiltonian is not hermitian.")
+
+        # Sanity check if the Hamiltonian contains only antisymmetric terms with i<j and k<l
+        if logger.getEffectiveLevel() <= logging.DEBUG:
+            for label in interaction_hamiltonian.get_two_body_hamiltonian():
+                op = [lbl.split("_") for lbl in label.split()]
+                if op[0][1] > op[1][1] or op[2][1] > op[3][1]:
+                    # Antisymmetric terms with i>j and k>l
+                    # Strictly speaking it should be '>=' instead of '>' but '.simplify()' method
+                    # invoked in 'FermionicOp.compress_hamiltonian()' ensures already
+                    # that terms i=j and k=l are eliminated.
+                    raise ValueError(
+                        "Unexpected values in Hamiltonian (antisymmetric counterparts of the "
+                        "given value). Please make sure to use "
+                        "the compressed Hamiltonian from '%s.get_compressed_hamiltonian'",
+                        FermionicOp.__qualname__,
+                    )
+
+        return interaction_hamiltonian
+
+    def _get_hamiltonian_alpha(self) -> FermionicOp:
+        """Returns the Hamiltonian associated with parameter alpha.
+
+        The Hamiltonian is split into 3 parts:
+        1. Fock operator H_alpha:
+            effective one-body operator taking into account some of the interaction effects
+            in a mean-field-ish accurate.
+        2. Interaction Hamiltonian:
+            Full Hamiltonian minus Fock operator. Thus, one-body and two-body terms are present.
+            This Hamiltonian is further split into
+            2.1 H_beta: one-body terms and coulomb two-body terms.
+            2.2 H_gamma: more complex two-body terms (i.e. non-coulombic terms)
+        """
+        return self.fock_operator
+
+    def _get_hamiltonian_beta(self) -> FermionicOp:
+        """Returns the Hamiltonian associated with parameter beta.
+
+        The Hamiltonian is split into 3 parts:
+        1. Fock operator H_alpha:
+            effective one-body operator taking into account some of the interaction effects
+            in a mean-field-ish accurate.
+        2. Interaction Hamiltonian:
+            Full Hamiltonian minus Fock operator. Thus, one-body and two-body terms are present.
+            This Hamiltonian is further split into
+            2.1 H_beta: one-body terms and coulomb two-body terms.
+            2.2 H_gamma: more complex two-body terms (i.e. non-coulombic terms)
+        """
+        beta_terms_one_body = dict(self._interaction_hamiltonian.get_one_body_hamiltonian().items())
+        beta_terms_two_body = dict(
+            self._interaction_hamiltonian.get_two_body_hamiltonian_coulomb_terms().items()
+        )
+
+        beta_terms = beta_terms_one_body | beta_terms_two_body
+
+        return FermionicOp(
+            data=beta_terms,
+            num_spin_orbitals=self._interaction_hamiltonian.num_spin_orbitals,
+        )
+
+    def _get_hamiltonian_gamma(
+        self, threshold_gamma: float = 1.0, threshold_method: str = "coeff_values"
+    ) -> tuple[FermionicOp, float]:
+        """Returns the Hamiltonian associated with parameter gamma and the final threshold.
+
+        The Hamiltonian is split into 3 parts:
+        1. Fock operator H_alpha:
+            effective one-body operator taking into account some of the interaction effects
+            in a mean-field-ish accurate.
+        2. Interaction Hamiltonian:
+            Full Hamiltonian minus Fock operator. Thus, one-body and two-body terms are present.
+            This Hamiltonian is further split into
+            2.1 H_beta: one-body terms and coulomb two-body terms.
+            2.2 H_gamma: more complex two-body terms (i.e. non-coulombic terms)
+
+        Args:
+            threshold_gamma: Determines how many of the two-body terms are kept/discarded.
+                The one-body terms are always kept.
+                The two-body Coulomb terms are always kept.
+                The 'complex' two-body terms (i.e. non-coulombic ones) are filtered
+                based on the threshold.
+                The threshold is given as percentage, reading as follows:
+                If the threshold is e.g. 0.9, then the largest 90% of the prefactors are returned
+                and the smallest 10% are discarded.
+                Since there is a finite number of coefficients with potentially arbitrary values,
+                it cannot be guaranteed that the percentage is perfectly matched;
+                instead the largest 0.9+epsilon percent are returned in above example,
+                this final threshold is returned by this method, too.
+                If multiple operators have exactly the same coefficient and the threshold
+                would be reached adding only part of them, then (quite arbitrarily)
+                just the first ones arising in the data will be added.
+                This weighting based on the prefactors does not guarantee that these have
+                the same effect on the final ground state energy but are a good educated guess.
+            threshold_method: Method used for the threshold. All methods sort the terms based on
+                the coefficient value (or rather `abs(coeff_value)`) before applying the threshold.
+                Thus, the terms with the largest absolute value are always included.
+                "coeff_value" means that the terms are filtered such that terms are added until
+                    `threshold*sum(coeff_values)` is reached; due to the calculation method
+                    the final threshold might be (potentially significantly) larger than
+                    the initial threshold argument.
+                "num_of_coeffs" means that the terms are filtered based on the number of
+                    coefficients. A number of e.g. 8 terms and a threshold of 0.25 would yield
+                    round(8*0.25) = 2 terms. The final threshold returned by this method is
+                    determined in the same way as in the 'coeff_value' method,
+                    i.e. the absolute values of the filtered terms are summed up and
+                    divided by the overall sum of absoulute values of the unfiltered terms.
+        Returns: tuple(FermionicOp, final_threshold_gamma)
+        """
+        if threshold_gamma < 0.0 or threshold_gamma > 1.0:
+            raise ValueError(
+                f"The threshold is a percentage and must be between 0 and 1, not {threshold_gamma}"
+            )
+
+        gamma_terms_sorted = dict(
+            sorted(
+                self._interaction_hamiltonian.get_two_body_hamiltonian_complex_terms().items(),
+                key=lambda x: abs(x[1]),
+                reverse=True,
+            )
+        )
+
+        if threshold_method == ThresholdMethods.COEFF_VALUE:
+            gamma_terms_filtered, final_threshold_gamma = self._filter_gamma_terms_by_coeff_value(
+                gamma_terms_sorted=gamma_terms_sorted, threshold_gamma=threshold_gamma
+            )
+        elif threshold_method == ThresholdMethods.NUM_OF_COEFFS:
+            gamma_terms_filtered, final_threshold_gamma = self._filter_gamma_terms_by_num_of_coeffs(
+                gamma_terms_sorted=gamma_terms_sorted, threshold_gamma=threshold_gamma
+            )
+        else:
+            raise ValueError(
+                "Unknown threshold method %s. Use one of these methods: %s",
+                threshold_method,
+                [method.value for method in ThresholdMethods],
+            )
+
+        hamiltonian_gamma = FermionicOp(
+            data=gamma_terms_filtered,
+            num_spin_orbitals=self._interaction_hamiltonian.num_spin_orbitals,
+        )
+
+        return hamiltonian_gamma, final_threshold_gamma
+
+    @staticmethod
+    def _filter_gamma_terms_by_coeff_value(
+        gamma_terms_sorted: dict[str, float], threshold_gamma: float
+    ) -> tuple[dict[str, float], float]:
+        """Filters the gamma terms by the coefficient values.
+
+        The terms are filtered such that terms are added until
+        `threshold*sum(coeff_values)` is reached; due to the calculation method
+        the final threshold might be (potentially significantly) larger than
+        the initial threshold argument."""
+        # Threshold value dependent on the actual values of the coefficients
+        sum_of_all_coeffs = sum(abs(coeff) for coeff in gamma_terms_sorted.values())
+        threshold_absolute_value = sum_of_all_coeffs * threshold_gamma
+
+        gamma_terms_filtered = {}
+        cumsum = 0.0
+        for label, coeff in gamma_terms_sorted.items():
+            if cumsum >= threshold_absolute_value:
+                break
+            if label in gamma_terms_filtered:  # i.e. already added via hermitian counterpart
+                continue
+            cumsum += abs(coeff)
+            coeff = coeff.real
+            gamma_terms_filtered[label] = coeff
+
+            label_hermitian_counterpart, switch_sign = FermionicOp.get_permuted_label(
+                FermionicOp.get_label_of_hermitian_counterpart(label)
+            )
+            # if the hermitian counterpart (or rather its antisymmetric counterpart) is
+            # the same as the original label, one can just skip the following steps.
+            # "+_0 +_1 -_0 -_1" would be skipped,
+            # "+_0 +_1 -_2 -_3" would add its hermitian counterpart "+_3 +_2 -_1 -_0" or
+            # rather its antisymmetric permuted counterpart "+_2 +_3 -_0 -_1"
+            if label != label_hermitian_counterpart:
+                coeff_hermitian_counterpart = gamma_terms_sorted[label_hermitian_counterpart]
+                if switch_sign:
+                    coeff_hermitian_counterpart = -coeff_hermitian_counterpart
+                if label_hermitian_counterpart not in gamma_terms_filtered:
+                    gamma_terms_filtered[label_hermitian_counterpart] = coeff_hermitian_counterpart
+                    cumsum += abs(coeff_hermitian_counterpart)
+
+        if cumsum > (sum_of_all_coeffs + 1e-7):
+            raise ValueError(
+                f"cumsum {cumsum} is larger than "
+                f"the sum of all coeffs {sum_of_all_coeffs} -> bug in code!!!"
+            )
+
+        final_threshold_gamma = cumsum / sum_of_all_coeffs
+
+        return gamma_terms_filtered, final_threshold_gamma
+
+    @staticmethod
+    def _filter_gamma_terms_by_num_of_coeffs(
+        gamma_terms_sorted: dict[str, float], threshold_gamma: float
+    ) -> tuple[dict[str, float], float]:
+        """Filters the gamma terms by the number of coefficients.
+
+        The terms are filtered based on the number of
+        coefficients. A number of e.g. 8 terms and a threshold of 0.25 would yield
+        round(8*0.25) = 2 terms. The final threshold returned by this method is
+        determined in the same way as in the 'coeff_value' method,
+        i.e. the absolute values of the filtered terms are summed up and
+        divided by the overall sum of absoulute values of the unfiltered terms."""
+        num_of_all_coeffs = len(gamma_terms_sorted)
+        threshold_num_of_coeffs = round(num_of_all_coeffs * threshold_gamma)
+
+        gamma_terms_filtered = {}
+        cumsum = 0
+        for label, coeff in gamma_terms_sorted.items():
+            if cumsum >= threshold_num_of_coeffs:
+                break
+            if label in gamma_terms_filtered:  # i.e. already added via hermitian counterpart
+                continue
+            cumsum += 1
+            coeff = coeff.real
+            gamma_terms_filtered[label] = coeff
+
+            label_hermitian_counterpart, switch_sign = FermionicOp.get_permuted_label(
+                FermionicOp.get_label_of_hermitian_counterpart(label)
+            )
+            # if the hermitian counterpart (or rather its antisymmetric counterpart) is
+            # the same as the original label, one can just skip the following steps.
+            # "+_0 +_1 -_0 -_1" would be skipped,
+            # "+_0 +_1 -_2 -_3" would add its hermitian counterpart "+_3 +_2 -_1 -_0" or
+            # rather its antisymmetric permuted counterpart "+_2 +_3 -_0 -_1"
+            if label != label_hermitian_counterpart:
+                coeff_hermitian_counterpart = gamma_terms_sorted[label_hermitian_counterpart]
+                if switch_sign:
+                    coeff_hermitian_counterpart = -coeff_hermitian_counterpart
+                if label_hermitian_counterpart not in gamma_terms_filtered:
+                    gamma_terms_filtered[label_hermitian_counterpart] = coeff_hermitian_counterpart
+                    # cumsum += abs(coeff_hermitian_counterpart)
+                    cumsum += 1
+
+        final_threshold_gamma = sum(abs(coeff) for coeff in gamma_terms_filtered.values()) / sum(
+            abs(coeff) for coeff in gamma_terms_sorted.values()
+        )
+
+        return gamma_terms_filtered, final_threshold_gamma
+
+    def _check_configuration(self, raise_on_failure: bool = True) -> bool:
+        valid = True
+        if self.num_qubits is None:
+            valid = False
+            if raise_on_failure:
+                raise ValueError("No number of qubits specified.")
+
+        if self.problem is None:
+            valid = False
+            if raise_on_failure:
+                raise ValueError("No electronic structure problem specified.")
+
+        return valid
+
+    def _get_preferred_initial_parameters(self) -> dict[Parameter, float]:
+        """Returns the preferred initial parameters of the VHA ansatz.
+
+        The initial parameters are chosen as described in equation (3)
+        in https://arxiv.org/pdf/1811.04476.pdf.
+        The factor τ mentioned in the paper is set in the _build method
+        such that the prefactors here are normalized to 1.
+        """
+        preferred_initial_parameters = {}
+        # Constant alpha values
+        for alpha_s in self._alpha_parameter_vector:
+            preferred_initial_parameters[alpha_s] = 1.0
+        # Increasing beta values
+        for s, beta_s in enumerate(self._beta_parameter_vector):
+            preferred_initial_parameters[beta_s] = (s + 1) / self.discretization_steps
+        # Increasing gamma values
+        for s, gamma_s in enumerate(self._gamma_parameter_vector):
+            preferred_initial_parameters[gamma_s] = (s + 1) / self.discretization_steps
+        return preferred_initial_parameters
+
+    def get_initial_point(self) -> list[float]:
+        """Gets the initial point for the ansatz parameters.
+
+        The initial parameters are chosen as described in equation (3)
+        in https://arxiv.org/pdf/1811.04476.pdf
+
+        Since qiskit does some non-intuitive sorting of the parameters,
+        this method takes care of returning the values as 'initial_point' (i.e. as list)
+        which is sorted in the same order as qiskit's parameters (i.e. object self.parameters).
+
+        If there is the chance to pass a dictionary to the parameter binding function
+        (e.g. an estimator's 'run' method),
+        passing the dictionary 'self.preferred_initial_parameters' is preferred
+        since it is based on far less (implicit) assumptions on implementation details.
+        """
+        logger.info(
+            "If possible, use the variable 'preferred_initial_parameters' of 'VHA' class object "
+            "to get the initial parameters "
+            "since its order is far less implementation-dependent (and thus less error-prone) "
+            "than this list."
+        )
+        if not self._is_built:
+            self._build()
+        return [self.preferred_initial_parameters[param] for param in self.parameters]
+
+    def _build(self) -> None:
+        """If not already built, build the circuit.
+
+        As side effect, it sets the preferred_initial_parameters
+        (not possible as stand-alone method...).
+        """
+        if self._is_built:
+            return
+
+        super()._build()
+
+        if self.num_qubits == 0:
+            return
+
+        circuit = QuantumCircuit(*self.qregs, name=self.name)
+
+        circuit.compose(
+            HartreeFock(
+                num_spatial_orbitals=self.problem.num_spatial_orbitals,
+                num_particles=self.problem.num_particles,
+                qubit_mapper=self.mapper,
+            ),
+            inplace=True,
+        )
+        if self.insert_barriers:
+            circuit.barrier()
+
+        # Set prefactor so that the parameters are expected to be roughly in the range [0, 2pi]
+        tau = 1 / (max(self.problem.orbital_energies) - min(self.problem.orbital_energies))  # type: ignore
+        tau_s = tau / self.discretization_steps
+        for s in range(self.discretization_steps):
+            # Create circuit for interaction Hamiltonian complex two-body terms
+            # (i.e. non-coulomb terms) associated with parameter gamma.
+            operator_gamma = self.mapper.map(tau_s * self._hamiltonian_gamma)
+            operator_gamma_grouped = operator_gamma.group_commuting()
+            operator_gamma_trotterized = PauliEvolutionGate(
+                operator_gamma_grouped,
+                time=self._gamma_parameter_vector[s],
+                synthesis=(
+                    LieTrotter(insert_barriers=self.insert_barriers)
+                    if self.trotterization_order == 1
+                    else SuzukiTrotter(
+                        order=self.trotterization_order, insert_barriers=self.insert_barriers
+                    )
+                ),
+                label=f"VHA interaction term H_γ (step {s+1}/{self.discretization_steps})",  # noqa: RUF001
+            )
+            circuit.append(operator_gamma_trotterized, circuit.qubits)
+            if self.insert_barriers:
+                circuit.barrier()
+
+            # Create circuit for interaction Hamiltonian one-body and coulomb two-body terms
+            # associated with parameter beta.
+            operator_beta = self.mapper.map(tau_s * self._hamiltonian_beta)
+            operator_beta_grouped = operator_beta.group_commuting()
+            operator_beta_trotterized = PauliEvolutionGate(
+                operator_beta_grouped,
+                time=self._beta_parameter_vector[s],
+                synthesis=(
+                    LieTrotter(insert_barriers=self.insert_barriers)
+                    if self.trotterization_order == 1
+                    else SuzukiTrotter(
+                        order=self.trotterization_order, insert_barriers=self.insert_barriers
+                    )
+                ),
+                label=f"VHA interaction term H_β (step {s+1}/{self.discretization_steps})",
+            )
+            circuit.append(operator_beta_trotterized, circuit.qubits)
+            if self.insert_barriers:
+                circuit.barrier()
+
+            # Create circuit for initial Hamiltonian (Fock operator)
+            # associated with parameter alpha.
+            operator_alpha = self.mapper.map(tau_s * self._hamiltonian_alpha)
+            operator_alpha_grouped = operator_alpha.group_commuting()
+            operator_alpha_trotterized = PauliEvolutionGate(
+                operator_alpha_grouped,
+                time=self._alpha_parameter_vector[s],
+                synthesis=(
+                    LieTrotter(insert_barriers=self.insert_barriers)
+                    if self.trotterization_order == 1
+                    else SuzukiTrotter(
+                        order=self.trotterization_order, insert_barriers=self.insert_barriers
+                    )
+                ),
+                label=f"VHA Fock term H_α (step {s+1}/{self.discretization_steps})",  # noqa: RUF001
+            )
+            circuit.append(operator_alpha_trotterized, circuit.qubits)
+            if self.insert_barriers:
+                circuit.barrier()
+
+        # cast global phase to float if it has no free parameters
+        if isinstance(circuit.global_phase, ParameterExpression):
+            try:
+                circuit.global_phase = float(circuit.global_phase)
+            except TypeError:
+                # expression contains free parameters
+                pass
+
+        try:
+            block = circuit.to_gate()
+        except QiskitError:
+            block = circuit.to_instruction()
+
+        self.append(block, self.qubits)
+
+
+def print_hamiltonian(
+    hamiltonian: ElectronicEnergy | FermionicOp, number_of_shown_items: int | None = 16
+) -> None:
+    """Pretty print hamiltonian.
+
+    In interactive mode it relies on Latex for nicely displaying the Hamiltonian.
+    """
+    if isinstance(hamiltonian, ElectronicEnergy):
+        fermionic_operator = hamiltonian.second_q_op()
+    elif isinstance(hamiltonian, FermionicOp):
+        fermionic_operator = hamiltonian
+    else:
+        raise TypeError(
+            "Unsupported type for 'hamiltonian'. "
+            "Please specify an object of type 'ElectronicEnergy' or 'FermionicOp'."
+        )
+    ops_sorted = sorted(fermionic_operator.items(), key=lambda x: len(x[0]))
+    if number_of_shown_items is None:
+        number_of_shown_items = int(1e3)  # savety guard for not too many shown items
+    for i, op in enumerate(ops_sorted):
+        if i >= number_of_shown_items:
+            print(f"... (skipped {len(ops_sorted)-number_of_shown_items} operators)")
+            break
+        operator, coeff = op
+        if isinstance(coeff, complex) and np.isclose(coeff.imag, 0.0):
+            coeff = coeff.real
+        if hasattr(sys, "ps1"):
+            operator = (
+                operator.replace("+", "a^†").replace("-", "a").replace("_", "_{").replace(" ", "}")
+                + "}"
+            )
+            display(Latex(f"{coeff:.3f} ⋅ ${operator}$"))
+        else:
+            print(f"{coeff:>10.3f} ⋅ {operator}")
