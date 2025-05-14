@@ -1,16 +1,11 @@
-"""Variational Hamiltonian Ansatz.
-
-Implemented by Clemens Possel.
-"""
+"""Truncated Variational Hamiltonian Ansatz (tVHA)."""
 
 from __future__ import annotations
 
 import logging
 import sys
-from enum import StrEnum
 
 import numpy as np
-from IPython.display import Latex, display
 from qiskit import QuantumCircuit
 from qiskit.circuit import ParameterExpression, ParameterVector
 from qiskit.circuit.library import BlueprintCircuit, PauliEvolutionGate
@@ -25,22 +20,15 @@ from qiskit_nature.second_q.mappers.fermionic_mapper import FermionicMapper
 from qiskit_nature.second_q.operators import ElectronicIntegrals
 from qiskit_nature.second_q.problems import ElectronicStructureProblem
 
-from vha.fermionic_operator import FermionicOp
+from tvha.fermionic_operator import FermionicOp
 
 # from .fermionic_operator import FermionicOp
 
 logger = logging.getLogger(__name__)
 
 
-class ThresholdMethods(StrEnum):
-    """Threshold methods for filtering of terms in the Hamiltonian."""
-
-    COEFF_VALUE = "coeff_value"
-    NUM_OF_COEFFS = "num_of_coeffs"
-
-
-class VHA(BlueprintCircuit):
-    """Implements Variational Hamiltonian Ansatz (VHA).
+class VariationalHamiltonianAnsatz(BlueprintCircuit):
+    """Implements truncated Variational Hamiltonian Ansatz (tVHA).
 
     Implements the Variational Hamiltonian Ansatz (VHA) as well as its variation, the
     truncated Variational Hamiltonian Ansatz (tVHA).
@@ -48,9 +36,10 @@ class VHA(BlueprintCircuit):
     VHA consists of alternating layers of Fock operator (known ground state Hamiltonian) and
     full Hamiltonian.
     In this implementation, the full Hamiltonian is split into one-body terms, Coulombic two-body
-    terms, and the remaining two-body terms, referred to as complex two-body terms.
-    Truncation in tVHA is performed on the complex two-body terms since their circuit representation
-    consists of multiple CNOT gates and is thus the most problematic part on NISQ devices.
+    terms, and the remaining non-Coulomb two-body terms.
+    Truncation in tVHA is performed on the non-Coulomb two-body terms since their
+    circuit representation consists of multiple CNOT gates and is thus the most problematic part
+    on NISQ devices.
 
     For further information about the theory behind (adiabatic evolution) see
     https://arxiv.org/pdf/quant-ph/0001106.pdf
@@ -62,11 +51,10 @@ class VHA(BlueprintCircuit):
         self,
         problem: ElectronicStructureProblem,
         mapper: FermionicMapper | None,
-        discretization_steps: int = 1,
+        trotter_steps: int = 1,
         threshold_gamma: float = 1.0,
-        threshold_method: str = "coeff_value",
         trotterization_order: int = 1,
-        name: str | None = "VHA",
+        name: str | None = "tVHA",
         insert_barriers: bool = False,
     ) -> None:
         """Variational Hamiltonian Ansatz.
@@ -77,10 +65,10 @@ class VHA(BlueprintCircuit):
         Args:
             problem: The representation of the molecule as ElectronicStructureProblem
             mapper: maps fermionic operators to qubit operators.
-            discretization_steps: Number of steps to discretize the adiabatic time evolution.
+            trotter_steps: Number of steps to discretize the adiabatic time evolution.
                 In the limit of infinite disretization steps the adiabatic theorem guarantees
                 to yield the ground state of the final Hamiltonian.
-            threshold_gamma: Threshold for filtering terms in the Hamiltonian H_γ
+            threshold_gamma: Threshold for filtering terms in the Hamiltonian H_gamma
                 for construction of the ansatz circuit.
                 A threshold of 0.9 means that 90% are considered.
                 The terms are sorted based on the coefficient value (or rather `abs(coeff_value)`)
@@ -92,27 +80,15 @@ class VHA(BlueprintCircuit):
                 become smaller due to the large number of terms in the Hamiltonian.
                 If a threshold_gamma of 1 (i.e. 100%) is chosen, this resembles the VHA algorithm;
                 any other threshold_gamma means that the tVHA algorithm is implemented.
-            threshold_method: Method used for the threshold. All methods sort the terms based on
-                the coefficient value (or rather `abs(coeff_value)`) before applying the threshold.
-                Thus, the terms with the largest absolute value are always included.
-                "coeff_value" means that the terms are filtered such that terms are added until
-                    `threshold*sum(coeff_values)` is reached; due to the calculation method
-                    the final threshold might be (potentially significantly) larger than
-                    the initial threshold argument.
-                "num_of_coeffs" means that the terms are filtered based on the number of
-                    coefficients. A number of e.g. 8 terms and a threshold of 0.25 would yield
-                    round(8*0.25) = 2 terms. The final threshold returned by this method is
-                    determined in the same way as in the 'coeff_value' method,
-                    i.e. the absolute values of the filtered terms are summed up and
-                    divided by the overall sum of absoulute values of the unfiltered terms.
             trotterization_order: Scheme to expand exponentiation of non-commuting operators;
-                typically 1st order trotterization exp(A+B)/approx exp(A)*exp(B) is sufficient.
-                Increasing the number of discretization steps is most likely more efficient
+                typically 1st order Trotterization exp(A+B)/approx exp(A)*exp(B) is sufficient.
+                Increasing the number of Trotter steps is most likely more efficient
                 to yield higher accuracy.
             name: Name of the block in the overall circuit.
             insert_barriers: Whether to insert barriers between different building blocks.
                 Solely for visualization purposes.
-        """  # noqa: RUF002
+        """
+        self._epsilon = 1e-13  # tolerance for floats to be considered equal
         self.problem = problem
         if isinstance(mapper, ParityMapper):
             raise ValueError("ParityMapper is not supported yet.")
@@ -120,28 +96,31 @@ class VHA(BlueprintCircuit):
         self.trotterization_order = trotterization_order
         self._electronic_energy = self.problem.hamiltonian
 
-        if not isinstance(discretization_steps, int) or discretization_steps < 1:
+        if not isinstance(trotter_steps, int) or trotter_steps < 1:
             raise ValueError(
-                f"Invalid number of layers: {discretization_steps}. Specify a positive integer."
+                f"Invalid number of layers: {trotter_steps}. Specify a positive integer."
             )
-        self.discretization_steps = discretization_steps
+        self.trotter_steps = trotter_steps
 
         self.hamilton_operator = self.get_hamilton_operator()
         self.fock_operator = self.get_fock_operator()
         self._interaction_hamiltonian = self._get_interaction_hamiltonian()
+
+        self.possible_thresholds_gamma = self._get_possible_thresholds_gamma()
+        _, self._threshold_gamma = self.get_threshold_gamma(initial_threshold_gamma=threshold_gamma)
         self._hamiltonian_alpha = self._get_hamiltonian_alpha()
         self._hamiltonian_beta = self._get_hamiltonian_beta()
-        self._hamiltonian_gamma, self.final_threshold_gamma = self._get_hamiltonian_gamma(
-            threshold_gamma=threshold_gamma, threshold_method=threshold_method
-        )
+        self._hamiltonian_gamma = self._get_hamiltonian_gamma(threshold_gamma=self._threshold_gamma)
 
         self.insert_barriers = insert_barriers
         self._alpha_parameter_vector = ParameterVector(
-            name="α", length=self.discretization_steps  # noqa: RUF001
+            name="α",  # noqa: RUF001
+            length=self.trotter_steps,
         )
-        self._beta_parameter_vector = ParameterVector(name="β", length=self.discretization_steps)
+        self._beta_parameter_vector = ParameterVector(name="β", length=self.trotter_steps)
         self._gamma_parameter_vector = ParameterVector(
-            name="γ", length=self.discretization_steps  # noqa: RUF001
+            name="γ",  # noqa: RUF001
+            length=self.trotter_steps,
         )
         self.preferred_initial_parameters = self._get_preferred_initial_parameters()
 
@@ -247,7 +226,7 @@ class VHA(BlueprintCircuit):
             Full Hamiltonian minus Fock operator. Thus, one-body and two-body terms are present.
             This Hamiltonian is further split into
             2.1 H_beta: one-body terms and coulomb two-body terms.
-            2.2 H_gamma: more complex two-body terms (i.e. non-coulombic terms)
+            2.2 H_gamma: non-Coulomb two-body terms.
         """
         return self.fock_operator
 
@@ -262,7 +241,7 @@ class VHA(BlueprintCircuit):
             Full Hamiltonian minus Fock operator. Thus, one-body and two-body terms are present.
             This Hamiltonian is further split into
             2.1 H_beta: one-body terms and coulomb two-body terms.
-            2.2 H_gamma: more complex two-body terms (i.e. non-coulombic terms)
+            2.2 H_gamma: non-Coulomb two-body terms.
         """
         beta_terms_one_body = dict(self._interaction_hamiltonian.get_one_body_hamiltonian().items())
         beta_terms_two_body = dict(
@@ -276,10 +255,115 @@ class VHA(BlueprintCircuit):
             num_spin_orbitals=self._interaction_hamiltonian.num_spin_orbitals,
         )
 
-    def _get_hamiltonian_gamma(
-        self, threshold_gamma: float = 1.0, threshold_method: str = "coeff_values"
-    ) -> tuple[FermionicOp, float]:
-        """Returns the Hamiltonian associated with parameter gamma and the final threshold.
+    def _get_sorted_noncoulomb_two_body_terms(self) -> dict[str, float]:
+        """Gets the non-Coulomb two-body terms (aka gamma terms) in descending order.
+
+        The descending order is based on the absolute value of the terms
+        but the terms' signs are not altered and can still be negative.
+
+        For truncation, this method is not directly suitable since it doesn't take hermitian
+        counterparts into account, i.e. the intuitive idea of truncating this list will possibly
+        result in a non-hermitian Hamiltonian.
+        Use '_get_hamiltonian_gamma' instead."""
+        return dict(
+            sorted(
+                self._interaction_hamiltonian.get_two_body_hamiltonian_noncoulomb_terms().items(),
+                key=lambda x: abs(x[1]),
+                reverse=True,
+            )
+        )
+
+    def _get_possible_thresholds_gamma(self) -> tuple[float]:
+        """Gets the available gamma thresholds, i.e. the cumulated sum of the gamma terms.
+
+        The i-th element is the sum of all non-Coulomb two-body terms (aka gamma terms) from 0 to i.
+        The zeroth element of the returned array is zero to resemble the case
+        where no terms are added.
+        By construction the returned tuple of possible thresholds is sorted in ascending order.
+        The information, which two-body terms a^dagger_i a^dagger_j a_k a_l are associated
+        with these elements, is not preserved within this method;
+        if needed, use '_get_sorted_noncoulomb_two_body_terms' or '_get_hamiltonian_gamma' instead.
+        """
+        gamma_terms_sorted = self._get_sorted_noncoulomb_two_body_terms()
+        sum_of_all_coeffs = sum(abs(coeff) for coeff in gamma_terms_sorted.values())
+        cumsum = [0.0]
+        labels_already_included = []
+        for label, coeff in gamma_terms_sorted.items():
+            # Add the hermitian counterpart to ensure the final Hamiltonian gamma stays hermitian
+            label_hermitian_counterpart, switch_sign = FermionicOp.get_permuted_label(
+                FermionicOp.get_label_of_hermitian_counterpart(label)
+            )
+            if switch_sign:
+                logger.warning(
+                    "Hermitian counterpart found with different sign than the original term. "
+                    "Hermitian counterparts should always have the same sign. "
+                    "Please check the code for bugs."
+                )
+
+            if (
+                label in labels_already_included
+                or label_hermitian_counterpart in labels_already_included
+            ):  # i.e. already added (via hermitian counterpart)
+                continue
+            if label == label_hermitian_counterpart:
+                labels_already_included.append(label)
+                cumsum.append(cumsum[-1] + abs(coeff))
+            else:
+                coeff_hermitian_counterpart = gamma_terms_sorted[label_hermitian_counterpart]
+                if not np.isclose(
+                    coeff, coeff_hermitian_counterpart, rtol=self._epsilon, atol=self._epsilon
+                ):
+                    logger.warning(
+                        "Coefficient %s and its hermitian counterpart %s have "
+                        "different values (%s and %s) although they are expected to be the same.",
+                        label,
+                        label_hermitian_counterpart,
+                        coeff,
+                        coeff_hermitian_counterpart,
+                    )
+                labels_already_included.extend([label, label_hermitian_counterpart])
+                cumsum.append(cumsum[-1] + abs(coeff) + abs(coeff_hermitian_counterpart))
+            # Above checks the case if the hermitian counterpart is the same
+            # as the original label, i.e.
+            # "+_0 +_1 -_0 -_1" would be skipped,
+            # "+_0 +_1 -_2 -_3" would add its hermitian counterpart "+_3 +_2 -_1 -_0" or
+            # rather its antisymmetric permuted counterpart "+_2 +_3 -_0 -_1"
+
+        if not np.isclose(cumsum[-1], sum_of_all_coeffs):
+            raise ValueError(
+                "The cummulative sum of all coefficients has a wrong value. "
+                "Please check the code for bugs."
+            )
+        possible_thresholds_gamma = np.array(cumsum) / sum_of_all_coeffs
+        if np.any(possible_thresholds_gamma < -self._epsilon) or np.any(
+            possible_thresholds_gamma > (1.0 + self._epsilon)
+        ):
+            raise ValueError(
+                "The truncation threshold must be between zero and one. Check the code for bugs."
+            )
+        return tuple(possible_thresholds_gamma.tolist())
+
+    def get_threshold_gamma(self, initial_threshold_gamma: float) -> tuple[int, float]:
+        """Gets the final truncation threshold for the tVHA ansatz and its index/ordinal number.
+
+        Returns: tuple[index, threshold_gamma]"""
+        index = int(
+            np.searchsorted(self.possible_thresholds_gamma, initial_threshold_gamma, side="left")
+        )
+        # Take care of those edge cases where the initial threshold maps to one of the
+        # possible thresholds but might slightly deviate due to float representation
+        if index > 0 and np.isclose(
+            self.possible_thresholds_gamma[index - 1],
+            initial_threshold_gamma,
+            rtol=self._epsilon,
+            atol=self._epsilon,
+        ):
+            return index - 1, self.possible_thresholds_gamma[index - 1]
+        # All other cases
+        return index, self.possible_thresholds_gamma[index]
+
+    def _get_hamiltonian_gamma(self, threshold_gamma: float = 1.0) -> FermionicOp:
+        """Returns the Hamiltonian associated with parameter gamma.
 
         The Hamiltonian is split into 3 parts:
         1. Fock operator H_alpha:
@@ -289,175 +373,82 @@ class VHA(BlueprintCircuit):
             Full Hamiltonian minus Fock operator. Thus, one-body and two-body terms are present.
             This Hamiltonian is further split into
             2.1 H_beta: one-body terms and coulomb two-body terms.
-            2.2 H_gamma: more complex two-body terms (i.e. non-coulombic terms)
+            2.2 H_gamma: non-Coulomb two-body terms.
 
         Args:
             threshold_gamma: Determines how many of the two-body terms are kept/discarded.
                 The one-body terms are always kept.
                 The two-body Coulomb terms are always kept.
-                The 'complex' two-body terms (i.e. non-coulombic ones) are filtered
-                based on the threshold.
-                The threshold is given as percentage, reading as follows:
+                The non-Coulomb two-body terms are filtered based on the threshold.
+                The truncation threshold is given as percentage, reading as follows:
                 If the threshold is e.g. 0.9, then the largest 90% of the prefactors are returned
                 and the smallest 10% are discarded.
                 Since there is a finite number of coefficients with potentially arbitrary values,
                 it cannot be guaranteed that the percentage is perfectly matched;
-                instead the largest 0.9+epsilon percent are returned in above example,
-                this final threshold is returned by this method, too.
+                instead the largest 0.9+epsilon percent are returned in above example
+                (if you are interested in the final truncation threshold, you can you
+                method 'get_threshold_gamma').
+                Terms are added until `threshold*sum(coeff_values)` is reached;
+                due to the calculation method the final threshold might be
+                (potentially significantly) larger than the initial threshold argument.
                 If multiple operators have exactly the same coefficient and the threshold
                 would be reached adding only part of them, then (quite arbitrarily)
                 just the first ones arising in the data will be added.
                 This weighting based on the prefactors does not guarantee that these have
                 the same effect on the final ground state energy but are a good educated guess.
-            threshold_method: Method used for the threshold. All methods sort the terms based on
-                the coefficient value (or rather `abs(coeff_value)`) before applying the threshold.
-                Thus, the terms with the largest absolute value are always included.
-                "coeff_value" means that the terms are filtered such that terms are added until
-                    `threshold*sum(coeff_values)` is reached; due to the calculation method
-                    the final threshold might be (potentially significantly) larger than
-                    the initial threshold argument.
-                "num_of_coeffs" means that the terms are filtered based on the number of
-                    coefficients. A number of e.g. 8 terms and a threshold of 0.25 would yield
-                    round(8*0.25) = 2 terms. The final threshold returned by this method is
-                    determined in the same way as in the 'coeff_value' method,
-                    i.e. the absolute values of the filtered terms are summed up and
-                    divided by the overall sum of absoulute values of the unfiltered terms.
-        Returns: tuple(FermionicOp, final_threshold_gamma)
+        Returns: FermionicOp
         """
-        if threshold_gamma < 0.0 or threshold_gamma > 1.0:
+        if threshold_gamma < -self._epsilon or threshold_gamma > 1.0 + self._epsilon:
             raise ValueError(
                 f"The threshold is a percentage and must be between 0 and 1, not {threshold_gamma}"
             )
 
-        gamma_terms_sorted = dict(
-            sorted(
-                self._interaction_hamiltonian.get_two_body_hamiltonian_complex_terms().items(),
-                key=lambda x: abs(x[1]),
-                reverse=True,
-            )
-        )
+        gamma_terms_sorted = self._get_sorted_noncoulomb_two_body_terms()
 
-        if threshold_method == ThresholdMethods.COEFF_VALUE:
-            gamma_terms_filtered, final_threshold_gamma = self._filter_gamma_terms_by_coeff_value(
-                gamma_terms_sorted=gamma_terms_sorted, threshold_gamma=threshold_gamma
-            )
-        elif threshold_method == ThresholdMethods.NUM_OF_COEFFS:
-            gamma_terms_filtered, final_threshold_gamma = self._filter_gamma_terms_by_num_of_coeffs(
-                gamma_terms_sorted=gamma_terms_sorted, threshold_gamma=threshold_gamma
-            )
-        else:
-            raise ValueError(
-                "Unknown threshold method %s. Use one of these methods: %s",
-                threshold_method,
-                [method.value for method in ThresholdMethods],
-            )
-
-        hamiltonian_gamma = FermionicOp(
-            data=gamma_terms_filtered,
-            num_spin_orbitals=self._interaction_hamiltonian.num_spin_orbitals,
-        )
-
-        return hamiltonian_gamma, final_threshold_gamma
-
-    @staticmethod
-    def _filter_gamma_terms_by_coeff_value(
-        gamma_terms_sorted: dict[str, float], threshold_gamma: float
-    ) -> tuple[dict[str, float], float]:
-        """Filters the gamma terms by the coefficient values.
-
-        The terms are filtered such that terms are added until
-        `threshold*sum(coeff_values)` is reached; due to the calculation method
-        the final threshold might be (potentially significantly) larger than
-        the initial threshold argument."""
-        # Threshold value dependent on the actual values of the coefficients
         sum_of_all_coeffs = sum(abs(coeff) for coeff in gamma_terms_sorted.values())
         threshold_absolute_value = sum_of_all_coeffs * threshold_gamma
 
-        gamma_terms_filtered = {}
+        gamma_terms_truncated = {}
         cumsum = 0.0
         for label, coeff in gamma_terms_sorted.items():
             if cumsum >= threshold_absolute_value:
                 break
-            if label in gamma_terms_filtered:  # i.e. already added via hermitian counterpart
+            if label in gamma_terms_truncated:  # i.e. already added via hermitian counterpart
                 continue
-            cumsum += abs(coeff)
-            coeff = coeff.real
-            gamma_terms_filtered[label] = coeff
 
             label_hermitian_counterpart, switch_sign = FermionicOp.get_permuted_label(
                 FermionicOp.get_label_of_hermitian_counterpart(label)
             )
-            # if the hermitian counterpart (or rather its antisymmetric counterpart) is
-            # the same as the original label, one can just skip the following steps.
-            # "+_0 +_1 -_0 -_1" would be skipped,
-            # "+_0 +_1 -_2 -_3" would add its hermitian counterpart "+_3 +_2 -_1 -_0" or
-            # rather its antisymmetric permuted counterpart "+_2 +_3 -_0 -_1"
-            if label != label_hermitian_counterpart:
-                coeff_hermitian_counterpart = gamma_terms_sorted[label_hermitian_counterpart]
-                if switch_sign:
-                    coeff_hermitian_counterpart = -coeff_hermitian_counterpart
-                if label_hermitian_counterpart not in gamma_terms_filtered:
-                    gamma_terms_filtered[label_hermitian_counterpart] = coeff_hermitian_counterpart
-                    cumsum += abs(coeff_hermitian_counterpart)
+            if switch_sign:
+                logger.warning(
+                    "Hermitian counterpart found with different sign than the original term. "
+                    "Hermitian counterparts should always have the same sign. "
+                    "Please check the code for bugs."
+                )
 
-        if cumsum > (sum_of_all_coeffs + 1e-7):
-            raise ValueError(
-                f"cumsum {cumsum} is larger than "
-                f"the sum of all coeffs {sum_of_all_coeffs} -> bug in code!!!"
-            )
-
-        final_threshold_gamma = cumsum / sum_of_all_coeffs
-
-        return gamma_terms_filtered, final_threshold_gamma
-
-    @staticmethod
-    def _filter_gamma_terms_by_num_of_coeffs(
-        gamma_terms_sorted: dict[str, float], threshold_gamma: float
-    ) -> tuple[dict[str, float], float]:
-        """Filters the gamma terms by the number of coefficients.
-
-        The terms are filtered based on the number of
-        coefficients. A number of e.g. 8 terms and a threshold of 0.25 would yield
-        round(8*0.25) = 2 terms. The final threshold returned by this method is
-        determined in the same way as in the 'coeff_value' method,
-        i.e. the absolute values of the filtered terms are summed up and
-        divided by the overall sum of absoulute values of the unfiltered terms."""
-        num_of_all_coeffs = len(gamma_terms_sorted)
-        threshold_num_of_coeffs = round(num_of_all_coeffs * threshold_gamma)
-
-        gamma_terms_filtered = {}
-        cumsum = 0
-        for label, coeff in gamma_terms_sorted.items():
-            if cumsum >= threshold_num_of_coeffs:
-                break
-            if label in gamma_terms_filtered:  # i.e. already added via hermitian counterpart
-                continue
-            cumsum += 1
             coeff = coeff.real
-            gamma_terms_filtered[label] = coeff
+            if not np.isclose(coeff, gamma_terms_sorted[label_hermitian_counterpart]):
+                raise ValueError(
+                    "Not-Hermitian operator encountered. Please check the code for bugs."
+                )
 
-            label_hermitian_counterpart, switch_sign = FermionicOp.get_permuted_label(
-                FermionicOp.get_label_of_hermitian_counterpart(label)
-            )
-            # if the hermitian counterpart (or rather its antisymmetric counterpart) is
-            # the same as the original label, one can just skip the following steps.
+            if label == label_hermitian_counterpart:
+                cumsum += abs(coeff)
+                gamma_terms_truncated[label] = coeff
+            else:
+                cumsum += 2 * abs(coeff)
+                gamma_terms_truncated[label] = coeff
+                gamma_terms_truncated[label_hermitian_counterpart] = coeff
+            # Above checks the case if the hermitian counterpart is the same
+            # as the original label, i.e.
             # "+_0 +_1 -_0 -_1" would be skipped,
             # "+_0 +_1 -_2 -_3" would add its hermitian counterpart "+_3 +_2 -_1 -_0" or
             # rather its antisymmetric permuted counterpart "+_2 +_3 -_0 -_1"
-            if label != label_hermitian_counterpart:
-                coeff_hermitian_counterpart = gamma_terms_sorted[label_hermitian_counterpart]
-                if switch_sign:
-                    coeff_hermitian_counterpart = -coeff_hermitian_counterpart
-                if label_hermitian_counterpart not in gamma_terms_filtered:
-                    gamma_terms_filtered[label_hermitian_counterpart] = coeff_hermitian_counterpart
-                    # cumsum += abs(coeff_hermitian_counterpart)
-                    cumsum += 1
 
-        final_threshold_gamma = sum(abs(coeff) for coeff in gamma_terms_filtered.values()) / sum(
-            abs(coeff) for coeff in gamma_terms_sorted.values()
+        return FermionicOp(
+            data=gamma_terms_truncated,
+            num_spin_orbitals=self._interaction_hamiltonian.num_spin_orbitals,
         )
-
-        return gamma_terms_filtered, final_threshold_gamma
 
     def _check_configuration(self, raise_on_failure: bool = True) -> bool:
         valid = True
@@ -477,7 +468,8 @@ class VHA(BlueprintCircuit):
         """Returns the preferred initial parameters of the VHA ansatz.
 
         The initial parameters are chosen as described in equation (3)
-        in https://arxiv.org/pdf/1811.04476.pdf.
+        in https://arxiv.org/pdf/1811.04476.pdf /
+        https://iopscience.iop.org/article/10.1088/2058-9565/ab1e85/meta.
         The factor τ mentioned in the paper is set in the _build method
         such that the prefactors here are normalized to 1.
         """
@@ -487,10 +479,10 @@ class VHA(BlueprintCircuit):
             preferred_initial_parameters[alpha_s] = 1.0
         # Increasing beta values
         for s, beta_s in enumerate(self._beta_parameter_vector):
-            preferred_initial_parameters[beta_s] = (s + 1) / self.discretization_steps
+            preferred_initial_parameters[beta_s] = (s + 1) / self.trotter_steps
         # Increasing gamma values
         for s, gamma_s in enumerate(self._gamma_parameter_vector):
-            preferred_initial_parameters[gamma_s] = (s + 1) / self.discretization_steps
+            preferred_initial_parameters[gamma_s] = (s + 1) / self.trotter_steps
         return preferred_initial_parameters
 
     def get_initial_point(self) -> list[float]:
@@ -547,9 +539,9 @@ class VHA(BlueprintCircuit):
 
         # Set prefactor so that the parameters are expected to be roughly in the range [0, 2pi]
         tau = 1 / (max(self.problem.orbital_energies) - min(self.problem.orbital_energies))  # type: ignore
-        tau_s = tau / self.discretization_steps
-        for s in range(self.discretization_steps):
-            # Create circuit for interaction Hamiltonian complex two-body terms
+        tau_s = tau / self.trotter_steps
+        for s in range(self.trotter_steps):
+            # Create circuit for interaction Hamiltonian non-Coulomb two-body terms
             # (i.e. non-coulomb terms) associated with parameter gamma.
             operator_gamma = self.mapper.map(tau_s * self._hamiltonian_gamma)
             operator_gamma_grouped = operator_gamma.group_commuting()
@@ -563,7 +555,7 @@ class VHA(BlueprintCircuit):
                         order=self.trotterization_order, insert_barriers=self.insert_barriers
                     )
                 ),
-                label=f"VHA interaction term H_γ (step {s+1}/{self.discretization_steps})",  # noqa: RUF001
+                label=f"VHA interaction term H_γ (step {s + 1}/{self.trotter_steps})",  # noqa: RUF001
             )
             circuit.append(operator_gamma_trotterized, circuit.qubits)
             if self.insert_barriers:
@@ -583,7 +575,7 @@ class VHA(BlueprintCircuit):
                         order=self.trotterization_order, insert_barriers=self.insert_barriers
                     )
                 ),
-                label=f"VHA interaction term H_β (step {s+1}/{self.discretization_steps})",
+                label=f"VHA interaction term H_β (step {s + 1}/{self.trotter_steps})",
             )
             circuit.append(operator_beta_trotterized, circuit.qubits)
             if self.insert_barriers:
@@ -603,7 +595,7 @@ class VHA(BlueprintCircuit):
                         order=self.trotterization_order, insert_barriers=self.insert_barriers
                     )
                 ),
-                label=f"VHA Fock term H_α (step {s+1}/{self.discretization_steps})",  # noqa: RUF001
+                label=f"VHA Fock term H_α (step {s + 1}/{self.trotter_steps})",  # noqa: RUF001
             )
             circuit.append(operator_alpha_trotterized, circuit.qubits)
             if self.insert_barriers:
@@ -646,16 +638,24 @@ def print_hamiltonian(
         number_of_shown_items = int(1e3)  # savety guard for not too many shown items
     for i, op in enumerate(ops_sorted):
         if i >= number_of_shown_items:
-            print(f"... (skipped {len(ops_sorted)-number_of_shown_items} operators)")
+            print(f"... (skipped {len(ops_sorted) - number_of_shown_items} operators)")
             break
         operator, coeff = op
         if isinstance(coeff, complex) and np.isclose(coeff.imag, 0.0):
             coeff = coeff.real
         if hasattr(sys, "ps1"):
-            operator = (
-                operator.replace("+", "a^†").replace("-", "a").replace("_", "_{").replace(" ", "}")
-                + "}"
-            )
-            display(Latex(f"{coeff:.3f} ⋅ ${operator}$"))
+            try:
+                from IPython.display import Latex, display
+
+                operator = (
+                    operator.replace("+", "a^†")
+                    .replace("-", "a")
+                    .replace("_", "_{")
+                    .replace(" ", "}")
+                    + "}"
+                )
+                display(Latex(f"{coeff:.3f} ⋅ ${operator}$"))
+            except ModuleNotFoundError:
+                print(f"{coeff:>10.3f} ⋅ {operator}")
         else:
             print(f"{coeff:>10.3f} ⋅ {operator}")

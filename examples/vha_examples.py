@@ -6,8 +6,8 @@ from qiskit_nature.second_q.drivers import PySCFDriver
 from qiskit_nature.second_q.formats.molecule_info import MoleculeInfo
 from qiskit_nature.second_q.mappers import JordanWignerMapper
 
-from vha.sbplx import SBPLX
-from vha.vha import VHA
+from tvha.sbplx import SBPLX
+from tvha.tvha import VHA
 
 # SETTINGS =========================================================================================
 # Adjust the name of the molecule here:

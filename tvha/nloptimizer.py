@@ -10,10 +10,11 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 #
-# Modified by poc (added Sbplx optimizer from NLopt)
-# Original file in .../qiskit/algorithms/optimizers/nlopts/nloptimizer.py
+# Modified by Clemens Possel (added Sbplx optimizer from NLopt)
+# Original file in qiskit/algorithms/optimizers/nlopts/nloptimizer.py
 
-"""Minimize using objective function"""
+"""Minimize using objective function."""
+
 from __future__ import annotations
 
 import logging
@@ -32,9 +33,11 @@ from qiskit_algorithms.optimizers.optimizer import (
 
 logger = logging.getLogger(__name__)
 
+# ruff: noqa
+
 
 class NLoptOptimizerType(Enum):
-    """NLopt Valid Optimizer"""
+    """NLopt Valid Optimizer."""
 
     GN_CRS2_LM = 1
     GN_DIRECT_L_RAND = 2
@@ -46,9 +49,7 @@ class NLoptOptimizerType(Enum):
 
 @_optionals.HAS_NLOPT.require_in_instance
 class NLoptOptimizer(Optimizer):
-    """
-    NLopt global optimizer base class
-    """
+    """NLopt global optimizer base class."""
 
     _OPTIONS = ["max_evals"]
 
@@ -78,11 +79,11 @@ class NLoptOptimizer(Optimizer):
 
     @abstractmethod
     def get_nlopt_optimizer(self) -> NLoptOptimizerType:
-        """return NLopt optimizer enum type"""
+        """return NLopt optimizer enum type."""
         raise NotImplementedError
 
     def get_support_level(self) -> dict:
-        """return support level dictionary"""
+        """return support level dictionary."""
         return {
             "gradient": OptimizerSupportLevel.ignored,
             "bounds": OptimizerSupportLevel.supported,
@@ -97,7 +98,7 @@ class NLoptOptimizer(Optimizer):
         self,
         fun: Callable[[POINT], float],
         x0: POINT,
-        jac: Callable[[POINT], POINT] | None = None,
+        jac: Callable[[POINT], POINT] | None = None,  # noqa: ARG002
         bounds: list[tuple[float, float]] | None = None,
     ) -> OptimizerResult:
         import nlopt

@@ -18,35 +18,25 @@ where <tag_name> is the name of the tag
 
 import nox
 
-nox.needs_version = ">=2024.04"
-
-# Specify default tags
-# nox.options.tags = ["style", "tests"]
+nox.needs_version = ">=2025.02"
 
 
-@nox.session(reuse_venv=True, tags=["style"])
-def black(session: nox.Session) -> None:
-    """Code format check using black."""
-    session.install("black")
-    session.run("black", ".", "--diff", "--check")
-
-
-@nox.session(reuse_venv=True, tags=["style"])
+@nox.session(reuse_venv=True)
 def ruff(session: nox.Session) -> None:
     """Code check using ruff."""
     session.install("ruff")
-    session.run("ruff", "check", "vha/")
+    session.run("ruff", "check", "tvha/")
 
 
-@nox.session(reuse_venv=True, tags=["style", "tests"])
+@nox.session(reuse_venv=True)
 def mypy(session: nox.Session) -> None:
     """Code check using mypy."""
     session.install(".", "mypy")
     session.run("mypy", ".")
 
 
-# @nox.session(python=["3.11", "3.12"], reuse_venv=True, tags=["tests"])
-# def pytest(session: nox.Session) -> None:
-#     """Test suite using pytest."""
-#     session.install(".[plot]", "pytest")
-#     session.run("pytest", "-v")
+@nox.session(python=["3.13"], reuse_venv=True)
+def pytest(session: nox.Session) -> None:
+    """Test suite using pytest."""
+    session.install(".[plot]", "pytest")
+    session.run("pytest", "-v")
