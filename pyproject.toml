@@ -1,49 +1,41 @@
 [build-system]
-requires = ["setuptools>=70.1", "setuptools-scm>=8.1"]
+requires = ["setuptools>=80.0", "setuptools-scm>=8.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "vha"
+name = "tvha"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.13"
 dynamic = ["version"]
 dependencies = [
-    # These are the new dependencies:
-    "numpy<2.0", # qiskit 1.1 does not work with numpy 2.0 because of rustworkx
-    "pyscf>=2.6;sys_platform=='linux'",
-    "qiskit>=1.1",
-    "qiskit_algorithms>=0.3",
-    "qiskit_nature>=0.7.2",
-    "qiskit_ibm_runtime>=0.24.1",
-    "nlopt~=2.7",
+    "matplotlib>=3.10",
+    "nlopt>=2.9",
+    "numpy>=2.2",
+    "opt_einsum>=3.4",
+    "pandas>=2.2",
+    "pyjson5>=1.6",
+    "pyscf>=2.9;sys_platform=='linux'",
+    "qiskit>=1.4,<2",
+    "qiskit_nature>=0.7",
+    "tqdm>=4.67",
 ]
 
 [project.optional-dependencies]
-# plot = ["matplotlib>=3.9"]
 develop = [
-    "black[jupyter]>=24.4",
-    "mypy>=1.10",
-    "nox>=2024.4",
-    "pytest>=8.2",
-    "ruff>=0.4",
+    "mypy>=1.15",
+    "nox>=2025.2",
+    "pytest>=8.3",
+    "ruff>=0.11",
 ]
 
 [project.urls]
-repository = "https://gitlab.cc-asp.fraunhofer.de/qc/vha"
+repository = "https://gitlab.cc-asp.fraunhofer.de/qc/tvha"
 
 [tool.setuptools]
-py-modules = ["vha"]
+py-modules = ["tvha"]
 
 [tool.setuptools_scm]
-write_to = "vha/__version__.py"
-
-[tool.black]
-line-length = 100
-target-version = ["py311", "py312"]
-
-[tool.isort]
-profile = "black"
-line_length = 100
+write_to = "tvha/__version__.py"
 
 [tool.mypy]
 follow_imports = "silent"
@@ -53,13 +45,13 @@ disallow_untyped_defs = true
 disallow_incomplete_defs = true
 warn_redundant_casts = true
 warn_unused_ignores = true
-exclude = ['tests/', 'examples/']
+exclude = ['tests/']
 
 [tool.ruff]
-target-version = "py312"
-line-length = 110
+target-version = "py313"
+line-length = 100
+
 [tool.ruff.lint]
-dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 extend-select = [
     "E",
     "F",
@@ -84,9 +76,11 @@ extend-select = [
     "PTH",
     "RUF",
 ]
-ignore = ["D208", "D209", "ANN101", "ANN102", "SIM105"]
+ignore = ["D208", "D209", "SIM105"]
+
 [tool.ruff.lint.pycodestyle]
 ignore-overlong-task-comments = true
+
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 

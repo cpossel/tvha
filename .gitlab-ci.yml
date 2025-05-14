@@ -1,7 +1,7 @@
 stages:
   - prepare
   - codecheck
-  # - testrun
+  - testrun
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
 workflow:
@@ -18,7 +18,7 @@ workflow:
       when: never
 
 default:
-  image: python:3.12
+  image: python:3.13
   cache: &global_cache # shared cache across all branches an all jobs
     key:
       files:
@@ -85,13 +85,13 @@ mypy-check:
   script:
     - nox -s mypy
 
-# pytest:
-#   stage: testrun
-#   tags:
-#     - srmuc01
-#   cache:
-#     <<: *global_cache
-#     policy: pull
-#   interruptible: false
-#   script:
-#     - nox -s pytest-3.12
+pytest:
+  stage: testrun
+  tags:
+    - srmuc01
+  cache:
+    <<: *global_cache
+    policy: pull
+  interruptible: false
+  script:
+    - nox -s pytest-3.13

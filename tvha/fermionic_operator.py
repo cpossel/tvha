@@ -49,7 +49,7 @@ def get_two_body_hamiltonian(self: FermionicOp) -> FermionicOp:
     """Gets the two-body terms of the given Hamiltonian.
 
     All two-body terms (i.e. sum of get_two_body_hamiltonian_coulomb_terms and
-    get_two_body_hamiltonian_complex_terms)."""
+    get_two_body_hamiltonian_noncoulomb_terms)."""
     return FermionicOp(
         data={
             label: coeff.real if isinstance(coeff, complex) else coeff
@@ -82,7 +82,7 @@ def get_two_body_hamiltonian_coulomb_terms(self: FermionicOp) -> FermionicOp:
 _add_function_to_class(get_two_body_hamiltonian_coulomb_terms, FermionicOp)
 
 
-def get_two_body_hamiltonian_complex_terms(self: FermionicOp) -> FermionicOp:
+def get_two_body_hamiltonian_noncoulomb_terms(self: FermionicOp) -> FermionicOp:
     r"""Gets the two-body terms of the given Hamiltonian.
 
     Only terms of shape a_i^\dagger a_j^\dagger a_k a_l with i != k and j != l."""
@@ -100,7 +100,7 @@ def get_two_body_hamiltonian_complex_terms(self: FermionicOp) -> FermionicOp:
     )
 
 
-_add_function_to_class(get_two_body_hamiltonian_complex_terms, FermionicOp)
+_add_function_to_class(get_two_body_hamiltonian_noncoulomb_terms, FermionicOp)
 
 
 def is_diagonal(self: FermionicOp) -> bool:

@@ -1,0 +1,4 @@
+threshold_gamma,num_nonlocal_gates,depth,num_parameters
+0.0,12,18,3
+0.5,60,113,3
+1.0,36,61,3

@@ -1,0 +1,6 @@
+Reference energy (i.e. Hartree Fock approximation) -1.117;
+Exact energy (numerical diagonalization): -1.137; 
+Total ground state energy (VHA statevector simulator): -1.137; 
+Improvement over HF approx: 0.0206; 
+Difference to exact energy: -9.55e-15 
+Optimal parameters: α=1, β=0.58189, γ=0.77853
