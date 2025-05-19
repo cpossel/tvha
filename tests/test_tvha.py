@@ -13,15 +13,15 @@ from tvha.tvha import VariationalHamiltonianAnsatz
 
 # ruff: noqa: S101
 
-optimizer_L_BFGS = L_BFGS_B(maxiter=1000)  # noqa: N816
-optimizer_NFT = NFT(maxiter=500, maxfev=1000, reset_interval=100)  # noqa: N816
-optimizer_SBPLX = SBPLX(max_evals=1000)  # noqa: N816
+optimizer_l_bfgs = L_BFGS_B(maxiter=1000)
+optimizer_nft = NFT(maxiter=500, maxfev=1000, reset_interval=100)
+optimizer_sbplx = SBPLX(max_evals=1000)
 
 
 class TestVariationalHamiltonianAnsatz:
     """Collection of tests for the Variational Hamiltonian Ansatz."""
 
-    @pytest.mark.parametrize("optimizer", [optimizer_L_BFGS, optimizer_NFT, optimizer_SBPLX])
+    @pytest.mark.parametrize("optimizer", [optimizer_l_bfgs, optimizer_nft, optimizer_sbplx])
     def test_vha_minimal_example(self, optimizer: Optimizer) -> None:
         """Minimal example for calculations with tVHA algorithm for H2 molecule.
 
