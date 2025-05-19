@@ -2,12 +2,12 @@
 
 from qiskit.primitives import Estimator as Statevector_Estimator
 from qiskit_algorithms.minimum_eigensolvers import VQE
+from qiskit_machine_learning.optimizers import SBPLX
 from qiskit_nature.second_q.drivers import PySCFDriver
 from qiskit_nature.second_q.formats.molecule_info import MoleculeInfo
 from qiskit_nature.second_q.mappers import JordanWignerMapper
 
-from tvha.sbplx import SBPLX
-from tvha.tvha import VHA
+from tvha.tvha import VariationalHamiltonianAnsatz
 
 # SETTINGS =========================================================================================
 # Adjust the name of the molecule here:
@@ -61,7 +61,7 @@ problem = driver.run()
 
 threshold_method = "coeff_value"
 
-ansatz = VHA(
+ansatz = VariationalHamiltonianAnsatz(
     problem=problem,
     discretization_steps=molecule_settings[molecule]["discretization_steps"],
     threshold_gamma=molecule_settings[molecule]["threshold_gamma"],
