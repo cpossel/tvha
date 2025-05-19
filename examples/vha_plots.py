@@ -1883,7 +1883,9 @@ def get_minimal_active_space_size(lowest_spin: int) -> tuple[int, int]:
 
 
 def get_electronic_structure_problem(
-    molecule_name: str, basis_set: str = "def2-svp"
+    molecule_name: str,
+    basis_set: str = "def2-svp",
+    path_data_files: Path = Path(__file__).parent,
 ) -> ElectronicStructureProblem:
     """Initializes ElectronicStructureProblem from molecule name."""
     # molecules without active space
@@ -1940,7 +1942,7 @@ def get_electronic_structure_problem(
     _, active_space_electrons = get_minimal_active_space_size(lowest_spin=lowest_spin)
 
     mol = gto.Mole()
-    mol.atom = str(Path(__file__).parent.joinpath(input_structure))
+    mol.atom = str(path_data_files.joinpath(input_structure))
     mol.basis = basis_set
     mol.verbose = 4
 
@@ -2014,7 +2016,16 @@ def main() -> None:
     add_title = True
     # ---------------------------------------------------------------------------------------------
 
-    problem = get_electronic_structure_problem(molecule_name=molecule_name, basis_set=basis_set)
+    output_folder = (
+        Path(__file__)
+        .parent.joinpath("data_for_paper_tvha")
+        .joinpath(f"plots_{molecule_name.replace('_', '')}")
+    )
+    output_folder.mkdir(exist_ok=True)
+
+    problem = get_electronic_structure_problem(
+        molecule_name=molecule_name, basis_set=basis_set, path_data_files=output_folder.parent
+    )
 
     vha = VariationalHamiltonianAnsatz(problem=problem, trotter_steps=1, mapper=mapper)
 
@@ -2027,13 +2038,6 @@ def main() -> None:
                 vha.possible_thresholds_gamma,
             )
             thresholds_gamma = vha.possible_thresholds_gamma
-
-    output_folder = (
-        Path(__file__)
-        .parent.joinpath("data_for_paper_tvha")
-        .joinpath(f"plots_{molecule_name.replace('_', '')}")
-    )
-    output_folder.mkdir(exist_ok=True)
 
     vha_plots = VHAPlots(
         output_path=output_folder, molecule_name=molecule_name, problem=problem, mapper=mapper
