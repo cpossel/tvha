@@ -17,6 +17,7 @@ from pyscf import gto, scf
 from qiskit.circuit.library import BlueprintCircuit
 from qiskit.primitives import Estimator as StatevectorEstimator
 from qiskit_algorithms.minimum_eigensolvers import VQE, NumPyMinimumEigensolver
+from qiskit_machine_learning.optimizers import SBPLX
 from qiskit_nature.second_q.algorithms import GroundStateEigensolver
 from qiskit_nature.second_q.algorithms.initial_points import HFInitialPoint
 from qiskit_nature.second_q.circuit.library import UCC, HartreeFock
@@ -30,7 +31,6 @@ from tqdm import tqdm
 
 from tvha.efficientsu2_hartreefock import EfficientSU2_HartreeFock
 from tvha.fermionic_operator import FermionicOp
-from tvha.sbplx import SBPLX
 from tvha.tvha import VariationalHamiltonianAnsatz
 
 logger = logging.getLogger(__name__)

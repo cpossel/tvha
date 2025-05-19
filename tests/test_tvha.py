@@ -4,12 +4,11 @@ import numpy as np
 import pytest
 from qiskit.primitives import Estimator as Statevector_Estimator
 from qiskit_algorithms.minimum_eigensolvers import VQE
-from qiskit_algorithms.optimizers import L_BFGS_B, NFT, Optimizer
+from qiskit_machine_learning.optimizers import L_BFGS_B, NFT, SBPLX, Optimizer
 from qiskit_nature.second_q.drivers import PySCFDriver
 from qiskit_nature.second_q.formats.molecule_info import MoleculeInfo
 from qiskit_nature.second_q.mappers import JordanWignerMapper
 
-from tvha.sbplx import SBPLX
 from tvha.tvha import VariationalHamiltonianAnsatz
 
 # ruff: noqa: S101
