@@ -715,7 +715,7 @@ class VHAPlots:
             ax.yaxis.set_major_locator(MaxNLocator(integer=True))
         if add_title:
             plt.title(f"Terms of Hamiltonian (${self.molecule_name}$)")
-        plt.xlabel("Magnitude of coefficient (absolute value)")
+        plt.xlabel("Magnitude of coefficient (absolute value in Hartree)")
         plt.ylabel("Number of terms")
         plt.legend()
         filename = f"{self.molecule_name}_hist"
