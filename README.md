@@ -13,6 +13,7 @@ It is based on the code of Qiskit and Qiskit Nature.
     - [PSI4 (Windows)](#psi4-windows)
     - [PyQuante (Windows)](#pyquante-windows)
     - [Gaussian (Windows)](#gaussian-windows)
+  - [How to cite this work](#how-to-cite-this-work)
 
 ## Installation
 
@@ -201,3 +202,14 @@ Below guide assumes Gaussian is installed in `C:\G16W\`. You should adjust the p
 
     Alternatively, one can try `conda install icc_rt`.
 
+## How to cite this work
+
+Feel free to use the code (according to the CC BY 4.0 license).
+Please be aware that any work and results based on this repository's code shall cite this work.
+Therefore use the following publication:
+
+> Possel, C., Hahn, W., Shirazi, R., Walt, M., Pinski, P., Wilhelm, F. K., & Bagrets, D. (2025). Truncated Variational Hamiltonian Ansatz: efficient quantum circuit design for quantum chemistry and material science. arXiv preprint arXiv:2505.19772.
+
+Further publications based on this repo's code are listed here:
+
+> Illésová, S., Novák, V., Bezděk, T., Beseda, M., & Possel, C. (2025). Numerical Optimization Strategies for the Variational Hamiltonian Ansatz in Noisy Quantum Environments. arXiv preprint arXiv:2505.22398.
