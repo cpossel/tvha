@@ -6,13 +6,12 @@ It is based on the code of Qiskit and Qiskit Nature.
 - [truncated Variational Hamiltonian Ansatz](#truncated-variational-hamiltonian-ansatz)
   - [Installation](#installation)
   - [First steps](#first-steps)
-  - [Troubleshooting](#troubleshooting)
-  - [Contribute your own code](#contribute-your-own-code)
-    - [Local testing](#local-testing)
   - [Chemistry Drivers for Windows](#chemistry-drivers-for-windows)
     - [PSI4 (Windows)](#psi4-windows)
     - [PyQuante (Windows)](#pyquante-windows)
     - [Gaussian (Windows)](#gaussian-windows)
+  - [Troubleshooting](#troubleshooting)
+  - [Contribute your own code](#contribute-your-own-code)
   - [How to cite this work](#how-to-cite-this-work)
 
 ## Installation
@@ -39,43 +38,6 @@ On Windows systems, please check [below section](#chemistry-drivers-for-windows)
 ## First steps
 
 The best starting point is to go to the [examples](./examples/) folder and check out the files there.
-
-## Troubleshooting
-
-If reading the documentation didn't help, feel free to check out our [GitLab page](https://gitlab.cc-asp.fraunhofer.de/qc/tvha/-/issues).
-Here you can also submit bug reports and feature requests.
-
-If you fixed some bug in the code on your own, please don't forget to [contribute](https://gitlab.cc-asp.fraunhofer.de/qc/tvha/-/merge_requests) your bug fix ;)
-
-## Contribute your own code
-
-Feel free to contribute to this project at [GitLab](https://gitlab.cc-asp.fraunhofer.de/qc/tvha)!
-
-Any contribution and help is highly appreciated!
-
-This project uses ruff (and mypy) for code formatting and linting and pytest for testing.
-The settings for all these tools can be found in [pyproject.toml](pyproject.toml) and are used automatically if you use `nox` as described in below section [local testing](#local-testing).
-
-### Local testing
-
-Before pushing code to the git repository, it is helpful to run tests locally.
-The same tests are run within the CI/CD pipeline in the git repository so failure/rejection of a push becomes far more unlikely if you run the tests locally beforewards.
-The tests can be run via the following command:
-
-```bash
-pip install nox
-nox
-```
-
-If you want to run only a subset of tests, they can be specified via
-```nox -s <session_name>```
-where <session_name> is the name of the respective function in this script.
-Or via
-```nox -t <tag_name>```
-where <tag_name> is the name of the tag
-(e.g. "style" for code style related testing or "tests" for testing of the code functionality).
-
-Detailed information about the implemented tests can be found in the [noxfile](noxfile.py).
 
 ## Chemistry Drivers for Windows
 
@@ -201,6 +163,15 @@ Below guide assumes Gaussian is installed in `C:\G16W\`. You should adjust the p
     ```
 
     Alternatively, one can try `conda install icc_rt`.
+
+## Troubleshooting
+
+If you have issues and the documentation didn't help, feel free to open an [issue](https://gitlab.cc-asp.fraunhofer.de/qc/tvha/-/issues) (see also [CONTRIBUTING](CONTRIBUTING.md)) or write an email to <clemens.possel@ict.fraunhofer.de>.
+Be aware that this software comes with no warranty and all support is purely voluntarily.
+
+## Contribute your own code
+
+See [CONTRIBUTING](CONTRIBUTING.md)
 
 ## How to cite this work
 
