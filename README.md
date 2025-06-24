@@ -204,12 +204,14 @@ Below guide assumes Gaussian is installed in `C:\G16W\`. You should adjust the p
 
 ## How to cite this work
 
-Feel free to use the code (according to the CC BY 4.0 license).
-Please be aware that any work and results based on this repository's code shall cite this work.
-Therefore use the following publication:
+Feel free to use this software.
+Please be aware that any work and results based on this software shall cite this work
+(according to the CC BY 4.0 license).
+Therefore use the following publication
+(or extract it from [CITATION.cff](CITATION.cff)):
 
 > Possel, C., Hahn, W., Shirazi, R., Walt, M., Pinski, P., Wilhelm, F. K., & Bagrets, D. (2025). Truncated Variational Hamiltonian Ansatz: efficient quantum circuit design for quantum chemistry and material science. arXiv preprint arXiv:2505.19772.
 
-Further publications based on this repo's code are listed here:
+Further publications based on this software are listed here:
 
 > Illésová, S., Novák, V., Bezděk, T., Beseda, M., & Possel, C. (2025). Numerical Optimization Strategies for the Variational Hamiltonian Ansatz in Noisy Quantum Environments. arXiv preprint arXiv:2505.22398.
