@@ -2075,7 +2075,7 @@ def main() -> None:
 
     if logger.getEffectiveLevel() <= logging.DEBUG:
         datapoint = vha_plots.get_energies(
-            trotter_steps=1, threshold_gamma=1.0, return_full_datapoint=True
+            list_of_trotter_steps=1, thresholds_gamma=1.0, return_full_datapoint=True
         )
         energy_statevector = datapoint[vha_plots.energy_data_header.index("energy")]
         optimal_parameters = datapoint[vha_plots.energy_data_header.index("optimal_parameters")]
