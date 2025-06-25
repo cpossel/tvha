@@ -106,7 +106,7 @@ class EfficientSU2_HartreeFock(EfficientSU2):  # noqa: N801
     def __init__(
         self,
         num_spatial_orbitals: int,
-        num_particles: int,
+        num_particles: tuple[int, int],
         mapper: QubitMapper,
         num_qubits: int | None = None,
         su2_gates: (
@@ -210,7 +210,7 @@ class EfficientSU2_HartreeFock(EfficientSU2):  # noqa: N801
         self,
         entanglement: str | list[list[int]] | Callable[[int], list[int]],
         reps: int,
-        num_particles: int,
+        num_particles: tuple[int, int],
         num_spatial_orbitals: int,
         num_qubits: int,
         mapper: QubitMapper,

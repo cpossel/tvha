@@ -2,12 +2,12 @@
 
 from qiskit.primitives import Estimator as Statevector_Estimator
 from qiskit_algorithms.minimum_eigensolvers import VQE
+from qiskit_machine_learning.optimizers import SBPLX
 from qiskit_nature.second_q.drivers import PySCFDriver
 from qiskit_nature.second_q.formats.molecule_info import MoleculeInfo
 from qiskit_nature.second_q.mappers import JordanWignerMapper
 
-from vha.sbplx import SBPLX
-from vha.vha import VHA
+from tvha.tvha import VariationalHamiltonianAnsatz
 
 estimator = Statevector_Estimator()
 mapper = JordanWignerMapper()
@@ -23,15 +23,13 @@ driver = PySCFDriver.from_molecule(molecule)
 driver.basis = basis_set
 problem = driver.run()
 
-discretization_steps = 1
+trotter_steps = 1
 threshold_gamma = 0.5
-threshold_method = "coeff_value"
 
-ansatz = VHA(
+ansatz = VariationalHamiltonianAnsatz(
     problem=problem,
-    discretization_steps=discretization_steps,
+    trotter_steps=trotter_steps,
     threshold_gamma=threshold_gamma,
-    threshold_method=threshold_method,
     mapper=mapper,
 )
 

@@ -7,3 +7,6 @@ __pycache__/
 dist/
 *.egg-info/
 __version__.py
+examples/**/*.svg
+examples/**/*.csv
+examples/**/*.json
