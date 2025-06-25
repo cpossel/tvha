@@ -1,13 +1,13 @@
-"""Minimal example for calculations with tVHA algorithm for H2 molecule."""
+"""Minimal example for calculations with tVHA algorithm for H2, LiH, and H4 molecule."""
 
 from qiskit.primitives import Estimator as Statevector_Estimator
 from qiskit_algorithms.minimum_eigensolvers import VQE
+from qiskit_machine_learning.optimizers import SBPLX
 from qiskit_nature.second_q.drivers import PySCFDriver
 from qiskit_nature.second_q.formats.molecule_info import MoleculeInfo
 from qiskit_nature.second_q.mappers import JordanWignerMapper
 
-from tvha.sbplx import SBPLX
-from tvha.tvha import VHA
+from tvha.tvha import VariationalHamiltonianAnsatz
 
 # SETTINGS =========================================================================================
 # Adjust the name of the molecule here:
@@ -16,7 +16,7 @@ molecule_name = "H_2"
 
 molecule_settings = {
     "H_2": {
-        "discretization_steps": 1,
+        "trotter_steps": 1,
         "threshold_gamma": 0.49999,
         "molecule": MoleculeInfo(
             symbols=["H"] * 2,
@@ -25,8 +25,8 @@ molecule_settings = {
             charge=0,
         ),
     },
-    "LiH full molecule": {  # TODO: add here also the reduced active space molecule!
-        "discretization_steps": 2,
+    "LiH": {  # full molecule without any active space
+        "trotter_steps": 2,
         "threshold_gamma": 0.5,
         "molecule": MoleculeInfo(
             symbols=["Li", "H"],
@@ -36,13 +36,13 @@ molecule_settings = {
         ),
     },
     "H_4": {
-        "discretization_steps": 4,
+        "trotter_steps": 4,
         "threshold_gamma": 0.5,
         "molecule": MoleculeInfo(
             symbols=["H"] * 4,
             coords=[
                 (0.0, 0.0, 0.74279 * i) for i in range(4)
-            ],  # TODO: other geometries are in principle as valid as this one --> need to decide for one
+            ],  # other (non-equilibrium) geometries are in principle as valid as this one
             multiplicity=1,
             charge=0,
         ),
@@ -59,13 +59,10 @@ driver = PySCFDriver.from_molecule(molecule)
 driver.basis = basis_set
 problem = driver.run()
 
-threshold_method = "coeff_value"
-
-ansatz = VHA(
+ansatz = VariationalHamiltonianAnsatz(
     problem=problem,
-    discretization_steps=molecule_settings[molecule]["discretization_steps"],
+    trotter_steps=molecule_settings[molecule]["trotter_steps"],
     threshold_gamma=molecule_settings[molecule]["threshold_gamma"],
-    threshold_method=threshold_method,
     mapper=mapper,
 )
 

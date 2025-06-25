@@ -17,6 +17,7 @@ from pyscf import gto, scf
 from qiskit.circuit.library import BlueprintCircuit
 from qiskit.primitives import Estimator as StatevectorEstimator
 from qiskit_algorithms.minimum_eigensolvers import VQE, NumPyMinimumEigensolver
+from qiskit_machine_learning.optimizers import SBPLX
 from qiskit_nature.second_q.algorithms import GroundStateEigensolver
 from qiskit_nature.second_q.algorithms.initial_points import HFInitialPoint
 from qiskit_nature.second_q.circuit.library import UCC, HartreeFock
@@ -30,7 +31,6 @@ from tqdm import tqdm
 
 from tvha.efficientsu2_hartreefock import EfficientSU2_HartreeFock
 from tvha.fermionic_operator import FermionicOp
-from tvha.sbplx import SBPLX
 from tvha.tvha import VariationalHamiltonianAnsatz
 
 logger = logging.getLogger(__name__)
@@ -455,7 +455,7 @@ class VHAPlots:
 
     def get_reference_UCC_energy(  # noqa: N802
         self, excitations: Iterable[int] = (1, 2)
-    ) -> dict[str, float]:
+    ) -> dict[str, float | list[float]]:
         """Gets energy from calculation with UCCSD ansatz as reference.
 
         Args:
@@ -499,7 +499,7 @@ class VHAPlots:
             )
             return {"energy": energy, "optimal_point": optimal_point}
 
-    def get_reference_HEA_energy(self) -> dict[str, float]:  # noqa: N802
+    def get_reference_HEA_energy(self) -> dict[str, float | list[float]]:  # noqa: N802
         """Gets energy from calculation with UCCSD ansatz as reference.
 
         Returns: dict(energy_name, energy_value)"""
@@ -715,7 +715,7 @@ class VHAPlots:
             ax.yaxis.set_major_locator(MaxNLocator(integer=True))
         if add_title:
             plt.title(f"Terms of Hamiltonian (${self.molecule_name}$)")
-        plt.xlabel("Magnitude of coefficient (absolute value)")
+        plt.xlabel("Magnitude of coefficient (absolute value in Hartree)")
         plt.ylabel("Number of terms")
         plt.legend()
         filename = f"{self.molecule_name}_hist"
@@ -1383,7 +1383,7 @@ class VHAPlots:
 
         A, B = np.meshgrid(thresholds_gamma, list_of_trotter_steps, indexing="ij")  # noqa: N806
 
-        def _get_energy_tmp(i: int, j: int) -> float:
+        def _get_energy_tmp(i: int, j: int) -> float | list:
             return self._get_energy(
                 threshold_gamma=thresholds_gamma[int(i)],
                 trotter_steps=list_of_trotter_steps[int(j)],
@@ -1424,6 +1424,10 @@ class VHAPlots:
         In contrast to the other plot methods, this one is quite inefficient since it does not
         store calculated energy values. So, every run inefficiently re-calculates all energy values.
         """
+        alphas = list(alphas)
+        betas = list(betas)
+        gammas = list(gammas)
+
         A, B, C = np.meshgrid(alphas, betas, gammas, indexing="ij")  # noqa: N806
         A_small, B_small = np.meshgrid(alphas, betas, indexing="ij")  # noqa: N806
         parameter_values = list(zip(A.flatten(), B.flatten(), C.flatten(), strict=True))
@@ -1704,6 +1708,8 @@ def plot_parameter_count(
         log_y: whether to use a logarithmic scale for the y axis.
         add_title: whether to add a title to the plot.
     """
+    molecule_names = list(molecule_names)
+
     num_parameters_vha = []
     num_parameters_uccsd = []
     num_parameters_uccsdt = []
@@ -1883,7 +1889,9 @@ def get_minimal_active_space_size(lowest_spin: int) -> tuple[int, int]:
 
 
 def get_electronic_structure_problem(
-    molecule_name: str, basis_set: str = "def2-svp"
+    molecule_name: str,
+    basis_set: str = "def2-svp",
+    path_data_files: Path = Path(__file__).parent,
 ) -> ElectronicStructureProblem:
     """Initializes ElectronicStructureProblem from molecule name."""
     # molecules without active space
@@ -1940,7 +1948,7 @@ def get_electronic_structure_problem(
     _, active_space_electrons = get_minimal_active_space_size(lowest_spin=lowest_spin)
 
     mol = gto.Mole()
-    mol.atom = str(Path(__file__).parent.joinpath(input_structure))
+    mol.atom = str(path_data_files.joinpath(input_structure))
     mol.basis = basis_set
     mol.verbose = 4
 
@@ -2014,7 +2022,16 @@ def main() -> None:
     add_title = True
     # ---------------------------------------------------------------------------------------------
 
-    problem = get_electronic_structure_problem(molecule_name=molecule_name, basis_set=basis_set)
+    output_folder = (
+        Path(__file__)
+        .parent.joinpath("data_for_paper_tvha")
+        .joinpath(f"plots_{molecule_name.replace('_', '')}")
+    )
+    output_folder.mkdir(exist_ok=True)
+
+    problem = get_electronic_structure_problem(
+        molecule_name=molecule_name, basis_set=basis_set, path_data_files=output_folder.parent
+    )
 
     vha = VariationalHamiltonianAnsatz(problem=problem, trotter_steps=1, mapper=mapper)
 
@@ -2027,13 +2044,6 @@ def main() -> None:
                 vha.possible_thresholds_gamma,
             )
             thresholds_gamma = vha.possible_thresholds_gamma
-
-    output_folder = (
-        Path(__file__)
-        .parent.joinpath("data_for_paper_tvha")
-        .joinpath(f"plots_{molecule_name.replace('_', '')}")
-    )
-    output_folder.mkdir(exist_ok=True)
 
     vha_plots = VHAPlots(
         output_path=output_folder, molecule_name=molecule_name, problem=problem, mapper=mapper
@@ -2064,8 +2074,8 @@ def main() -> None:
     # unless stated explicitly to be the total energy.
 
     if logger.getEffectiveLevel() <= logging.DEBUG:
-        datapoint = vha_plots.get_energy(
-            trotter_steps=1, threshold_gamma=1.0, return_full_datapoint=True
+        datapoint = vha_plots.get_energies(
+            list_of_trotter_steps=1, thresholds_gamma=1.0, return_full_datapoint=True
         )
         energy_statevector = datapoint[vha_plots.energy_data_header.index("energy")]
         optimal_parameters = datapoint[vha_plots.energy_data_header.index("optimal_parameters")]
