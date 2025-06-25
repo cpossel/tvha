@@ -455,7 +455,7 @@ class VHAPlots:
 
     def get_reference_UCC_energy(  # noqa: N802
         self, excitations: Iterable[int] = (1, 2)
-    ) -> dict[str, float]:
+    ) -> dict[str, float | list[float]]:
         """Gets energy from calculation with UCCSD ansatz as reference.
 
         Args:
@@ -499,7 +499,7 @@ class VHAPlots:
             )
             return {"energy": energy, "optimal_point": optimal_point}
 
-    def get_reference_HEA_energy(self) -> dict[str, float]:  # noqa: N802
+    def get_reference_HEA_energy(self) -> dict[str, float | list[float]]:  # noqa: N802
         """Gets energy from calculation with UCCSD ansatz as reference.
 
         Returns: dict(energy_name, energy_value)"""
@@ -1383,7 +1383,7 @@ class VHAPlots:
 
         A, B = np.meshgrid(thresholds_gamma, list_of_trotter_steps, indexing="ij")  # noqa: N806
 
-        def _get_energy_tmp(i: int, j: int) -> float:
+        def _get_energy_tmp(i: int, j: int) -> float | list:
             return self._get_energy(
                 threshold_gamma=thresholds_gamma[int(i)],
                 trotter_steps=list_of_trotter_steps[int(j)],
@@ -1424,6 +1424,10 @@ class VHAPlots:
         In contrast to the other plot methods, this one is quite inefficient since it does not
         store calculated energy values. So, every run inefficiently re-calculates all energy values.
         """
+        alphas = list(alphas)
+        betas = list(betas)
+        gammas = list(gammas)
+
         A, B, C = np.meshgrid(alphas, betas, gammas, indexing="ij")  # noqa: N806
         A_small, B_small = np.meshgrid(alphas, betas, indexing="ij")  # noqa: N806
         parameter_values = list(zip(A.flatten(), B.flatten(), C.flatten(), strict=True))
@@ -1704,6 +1708,8 @@ def plot_parameter_count(
         log_y: whether to use a logarithmic scale for the y axis.
         add_title: whether to add a title to the plot.
     """
+    molecule_names = list(molecule_names)
+
     num_parameters_vha = []
     num_parameters_uccsd = []
     num_parameters_uccsdt = []
@@ -2068,7 +2074,7 @@ def main() -> None:
     # unless stated explicitly to be the total energy.
 
     if logger.getEffectiveLevel() <= logging.DEBUG:
-        datapoint = vha_plots.get_energy(
+        datapoint = vha_plots.get_energies(
             trotter_steps=1, threshold_gamma=1.0, return_full_datapoint=True
         )
         energy_statevector = datapoint[vha_plots.energy_data_header.index("energy")]
