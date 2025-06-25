@@ -89,3 +89,6 @@ convention = "google"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["*test*.py"]
+addopts = [
+    "--import-mode=importlib",
+]
