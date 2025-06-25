@@ -59,6 +59,7 @@ ruff-check:
   interruptible: true
   allow_failure: true
   script:
+    - pip install nox
     - nox -s ruff
 
 mypy-check:
@@ -71,6 +72,7 @@ mypy-check:
   interruptible: true
   allow_failure: true
   script:
+    - pip install nox
     - nox -s mypy
 
 pytest:
@@ -82,4 +84,5 @@ pytest:
     policy: pull
   interruptible: false
   script:
+    - pip install nox
     - nox -s pytest

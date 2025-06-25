@@ -24,14 +24,14 @@ nox.needs_version = ">=2025.02"
 @nox.session(reuse_venv=True)
 def ruff(session: nox.Session) -> None:
     """Code check using ruff."""
-    session.install("ruff")
+    session.install("ruff", ".")
     session.run("ruff", "check", "tvha/")
 
 
 @nox.session(reuse_venv=True)
 def mypy(session: nox.Session) -> None:
     """Code check using mypy."""
-    session.install(".", "mypy")
+    session.install("mypy", ".")
     session.run("mypy", ".")
 
 
