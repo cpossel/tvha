@@ -23,15 +23,13 @@ driver = PySCFDriver.from_molecule(molecule)
 driver.basis = basis_set
 problem = driver.run()
 
-discretization_steps = 1
+trotter_steps = 1
 threshold_gamma = 0.5
-threshold_method = "coeff_value"
 
 ansatz = VariationalHamiltonianAnsatz(
     problem=problem,
-    discretization_steps=discretization_steps,
+    trotter_steps=trotter_steps,
     threshold_gamma=threshold_gamma,
-    threshold_method=threshold_method,
     mapper=mapper,
 )
 
