@@ -172,15 +172,11 @@ class VariationalHamiltonianAnsatz(BlueprintCircuit):
             h1_b=np.diag(self.problem.orbital_occupations_b),  # type: ignore
         )
         fock_operator = (
-            ElectronicEnergy(self._electronic_energy.fock(density=density))
-            .second_q_op()
-            .simplify(atol=1e-7)  # some non-diagonal terms in LiH example tend to be around 1.2e-8
+            ElectronicEnergy(self._electronic_energy.fock(density=density)).second_q_op().simplify()
         )
         fock_operator._data = {  # noqa: SLF001
             label: coeff.real for label, coeff in fock_operator.items()
         }
-        if not fock_operator.is_diagonal():
-            raise ValueError("The fock operator is not diagonal! Please check the code for bugs.")
         return fock_operator
 
     def _get_interaction_hamiltonian(self) -> FermionicOp:

@@ -49,18 +49,6 @@ prepare:
   script:
     - pip install build setuptools-scm nox
 
-black-formatcheck:
-  stage: codecheck
-  tags:
-    - srmuc01
-  cache:
-    <<: *global_cache
-    policy: pull
-  interruptible: true
-  allow_failure: true
-  script:
-    - nox -s black
-
 ruff-check:
   stage: codecheck
   tags:
@@ -71,6 +59,7 @@ ruff-check:
   interruptible: true
   allow_failure: true
   script:
+    - pip install nox
     - nox -s ruff
 
 mypy-check:
@@ -83,6 +72,7 @@ mypy-check:
   interruptible: true
   allow_failure: true
   script:
+    - pip install nox
     - nox -s mypy
 
 pytest:
@@ -94,4 +84,5 @@ pytest:
     policy: pull
   interruptible: false
   script:
-    - nox -s pytest-3.13
+    - pip install nox
+    - nox -s pytest

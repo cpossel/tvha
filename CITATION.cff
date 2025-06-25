@@ -1,0 +1,89 @@
+cff-version: 1.2.0
+title: truncated Variational Hamiltonian Ansatz
+authors:
+  - given-names: Clemens
+    family-names: Possel
+    email: clemens.possel@ict.fraunhofer.de
+    affiliation: Fraunhofer Institute for Chemical Technology ICT
+    orcid: "https://orcid.org/0000-0002-1859-7533"
+message: >-
+  If you use this software, please cite it as below.
+type: software
+identifiers:
+  - type: url
+    value: "https://gitlab.cc-asp.fraunhofer.de/qc/tvha"
+repository-code: "https://gitlab.cc-asp.fraunhofer.de/qc/tvha"
+abstract: >-
+  Implementation of the (truncated) Variational Hamiltonian Ansatz (VHA/tVHA)
+  for calculation of ground state energies of molecular systems as well as
+  other systems described by Hamiltonians consisting of Fermionic operators.
+keywords:
+  - quantum computing
+  - quantum chemistry
+  - Variational Quantum Eigensolver VQE
+  - Variational Hamiltonian Ansatz VHA
+  - NISQ
+  - active space methods
+license: CC-BY-4.0
+preferred-citation:
+  type: misc
+  title: Truncated Variational Hamiltonian Ansatz: efficient quantum circuit design for quantum chemistry and material science
+  authors:
+    - given-names: Clemens
+      family-names: Possel
+      email: clemens.possel@ict.fraunhofer.de
+      affiliation: Fraunhofer Institute for Chemical Technology ICT
+      orcid: "https://orcid.org/0000-0002-1859-7533"
+    - given-names: Walter
+      family-names: Hahn
+      email: walter.hahn@iaf.fraunhofer.de
+      affiliation: Fraunhofer Institute for Applied Solid-State Physics IAF
+      orcid: "https://orcid.org/0000-0003-4355-2019"
+    - given-names: Reza
+      family-names: Shirazi
+      email: reza.shirazi@quantumsimulations.de
+      affiliation: HQS Quantum Simulations GmbH
+      orcid: "https://orcid.org/0009-0000-7622-3161"
+    - given-names: Marina
+      family-names: Walt
+      email: marina.walt@quantumsimulations.de
+      affiliation: HQS Quantum Simulations GmbH
+      orcid: "https://orcid.org/0000-0002-4147-9420"
+    - given-names: Peter
+      family-names: Pinski
+      email: peter.pinski@quantumsimulations.de
+      affiliation: HQS Quantum Simulations GmbH
+      orcid: "https://orcid.org/0000-0003-2874-6843"
+    - given-names: Frank K.
+      family-names: Wilhelm
+      email: f.wilhelm-mauch@fz-juelich.de
+      affiliation: Forschungszentrum Jülich
+      orcid: "https://orcid.org/0000-0003-1034-8476"
+    - given-names: Dmitry
+      family-names: Bagrets
+      email: d.bagrets@fz-juelich.de
+      affiliation: Forschungszentrum Jülich
+      orcid: "https://orcid.org/0000-0002-3985-4834"
+  doi: "10.48550/arXiv.2505.19772"
+  year: 2025
+  archivePrefix: arXiv
+  primaryClass: quant-ph
+  url: https://arxiv.org/abs/2505.19772,
+  abstract: >-
+    Quantum computing has the potential to revolutionize quantum
+    chemistry and material science by offering solutions to complex problems unattainable
+    with classical computers. However, the development of efficient quantum algorithms
+    that are efficient under noisy conditions remains a major challenge. In this article, we
+    introduce the truncated Variational Hamiltonian Ansatz (tVHA), a novel circuit design
+    for conducting quantum calculations on Noisy Intermediate-Scale Quantum (NISQ)
+    devices. tVHA provides a promising approach for a broad range of applications
+    by utilizing principles from the adiabatic theorem in solid state physics. The
+    proposed ansatz significantly reduces the parameter count and can decrease circuit
+    size substantially, with a trade-off in accuracy. Thus, tVHA facilitates easier
+    convergence within the variational quantum eigensolver framework compared to state-
+    of-the-art ans ̈atze such as Unitary Coupled Cluster (UCC) and Hardware-Efficient
+    Ansatz (HEA). While this article concentrates on the practical applications of tVHA
+    in quantum chemistry, demonstrating its suitability for both weakly and strongly
+    correlated systems and its compatibility with active space calculations, its underlying
+    principles suggest a wider applicability extending to the broader field of material science
+    computations on quantum computing platforms.
