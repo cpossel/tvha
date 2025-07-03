@@ -27,7 +27,7 @@ keywords:
 license: CC-BY-4.0
 preferred-citation:
   type: misc
-  title: Truncated Variational Hamiltonian Ansatz: efficient quantum circuit design for quantum chemistry and material science
+  title: "Truncated Variational Hamiltonian Ansatz: efficient quantum circuit design for quantum chemistry and material science"
   authors:
     - given-names: Clemens
       family-names: Possel
