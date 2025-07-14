@@ -176,8 +176,7 @@ See [CONTRIBUTING](CONTRIBUTING.md)
 ## How to cite this work
 
 Feel free to use this software.
-Please be aware that any work and results based on this software shall cite this work
-(according to the CC BY 4.0 license).
+Please be aware that any work and results based on this software shall cite this work (see also [license](LICENSE)).
 Therefore use the following publication
 (or extract it from [CITATION.cff](CITATION.cff)):
 
