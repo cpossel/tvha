@@ -11,8 +11,8 @@ message: >-
 type: software
 identifiers:
   - type: url
-    value: "https://gitlab.cc-asp.fraunhofer.de/qc/tvha"
-repository-code: "https://gitlab.cc-asp.fraunhofer.de/qc/tvha"
+    value: "https://github.com/cpossel/tvha"
+repository-code: "https://github.com/cpossel/tvha"
 abstract: >-
   Implementation of the (truncated) Variational Hamiltonian Ansatz (VHA/tVHA)
   for calculation of ground state energies of molecular systems as well as

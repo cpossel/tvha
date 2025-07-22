@@ -31,7 +31,7 @@ develop = [
 ]
 
 [project.urls]
-repository = "https://gitlab.cc-asp.fraunhofer.de/qc/tvha"
+repository = "https://github.com/cpossel/tvha"
 
 [tool.setuptools]
 py-modules = ["tvha"]

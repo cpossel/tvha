@@ -7,7 +7,7 @@ The following sections give a guide for the different types of feedback/contribu
 
 ## Feature requests and bug reports
 
-Please open an [issue](https://gitlab.cc-asp.fraunhofer.de/qc/tvha/-/issues) in this repo.
+Please open an [issue](https://github.com/cpossel/tvha/issues) in this repo.
 Please try to provide as much information as needed to understand (and reproduce) the issue.
 For bug reports a minimal example would be highly appreciated.
 
