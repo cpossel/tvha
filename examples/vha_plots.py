@@ -173,28 +173,6 @@ class VHAPlots:
                 + "\n"
             )
 
-    def _is_in_energy_data(
-        self,
-        trotter_steps: int,
-        threshold_gamma: float,
-        max_evals: int = 1000,
-        molecule_name: str | None = None,
-    ) -> bool:
-        """Checks whether the energy data entry for given options exists.
-
-        Checks for its existence in the attribute 'self.energy_data'.
-        """
-        try:
-            self._get_energy(
-                trotter_steps=trotter_steps,
-                threshold_gamma=threshold_gamma,
-                max_evals=max_evals,
-                molecule_name=molecule_name,
-            )
-            return True
-        except ValueError:
-            return False
-
     def _calculate_missing_energies(
         self,
         list_of_trotter_steps: int | Iterable[int],
@@ -228,10 +206,11 @@ class VHAPlots:
         missing_datapoints = []
         for trotter_steps, max_evals in zip(list_of_trotter_steps, list_of_max_evals, strict=True):
             for threshold_gamma in final_thresholds_gamma:
-                if not self._is_in_energy_data(
+                if not self._get_energy(
                     trotter_steps=trotter_steps,
                     threshold_gamma=threshold_gamma,
                     max_evals=max_evals,
+                    suppress_error=True,
                 ):
                     missing_datapoints.append(((trotter_steps, max_evals), threshold_gamma))
 
@@ -266,11 +245,14 @@ class VHAPlots:
         molecule_name: str | None = None,
         max_evals: int = 1000,
         return_full_datapoint: bool = False,
-    ) -> float | list:
+        suppress_error: bool = False,
+    ) -> float | list | False:
         """Gets the energy for given trotter steps and truncation threshold.
 
         Searches self.energy_data for it, so no previous check is performed whether the datapoint
         was calculated previously.
+        If the datapoint is not found in self.energy_data, it raises a ValueError or returns False,
+        dependent on the value of 'suppress_error'.
         """
         if molecule_name is None:
             molecule_name = self.molecule_name
@@ -294,6 +276,8 @@ class VHAPlots:
                 if return_full_datapoint:
                     return datapoint
                 return float(datapoint[idx_energy])
+        if suppress_error:
+            return False
         raise ValueError(
             f"Energy for {trotter_steps} trotter steps, threshold γ "  # noqa: RUF001
             f"of {threshold_gamma} and maximum number of function evaluations of {max_evals}"
