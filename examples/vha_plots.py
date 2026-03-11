@@ -6,7 +6,7 @@ The plots help investigate tVHA and tune it.
 import itertools
 import json
 import logging
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -127,16 +127,16 @@ class VHAPlots:
         try:
             data = pd.read_csv(
                 file,
-                index_col=False,
+                index_col="id",
                 converters={"optimal_parameters": lambda x: json.loads(x)},
             )
             energy_data_header = tuple(data.columns.tolist())
-            data_clean = data.drop_duplicates(
-                subset=("molecule_name", "trotter_steps", "threshold_gamma"),
-                keep="first",
-                ignore_index=True,
-            )
-            energy_data = data_clean.values.tolist()
+            # data_clean = data.drop_duplicates(
+            #     subset=("molecule_name", "trotter_steps", "threshold_gamma"),
+            #     keep="first",
+            #     ignore_index=True,
+            # )
+            energy_data = data.values.tolist()
         except FileNotFoundError:
             logger.info(
                 "Can't find the file that is supposed to contain the energy data.", exc_info=True
@@ -174,7 +174,11 @@ class VHAPlots:
             )
 
     def _is_in_energy_data(
-        self, trotter_steps: int, threshold_gamma: float, molecule_name: str | None = None
+        self,
+        trotter_steps: int,
+        threshold_gamma: float,
+        max_evals: int = 1000,
+        molecule_name: str | None = None,
     ) -> bool:
         """Checks whether the energy data entry for given options exists.
 
@@ -184,6 +188,7 @@ class VHAPlots:
             self._get_energy(
                 trotter_steps=trotter_steps,
                 threshold_gamma=threshold_gamma,
+                max_evals=max_evals,
                 molecule_name=molecule_name,
             )
             return True
@@ -194,6 +199,7 @@ class VHAPlots:
         self,
         list_of_trotter_steps: int | Iterable[int],
         thresholds_gamma: float | Iterable[float],
+        max_evals: int | Sequence[int] = 1000,
     ) -> None:
         """Calculates the energy for the given list of trotter steps and thresholds gamma.
 
@@ -206,6 +212,7 @@ class VHAPlots:
             if isinstance(list_of_trotter_steps, Iterable)
             else [list_of_trotter_steps]
         )
+        list_of_max_evals = max_evals if isinstance(max_evals, Sequence) else [max_evals]
         if any(not isinstance(i, int) for i in list_of_trotter_steps) or any(
             i < 1 for i in list_of_trotter_steps
         ):
@@ -219,18 +226,22 @@ class VHAPlots:
         final_thresholds_gamma = self._get_final_thresholds_gamma(thresholds_gamma=thresholds_gamma)
 
         missing_datapoints = []
-        for trotter_steps in list_of_trotter_steps:
+        for trotter_steps, max_evals in zip(list_of_trotter_steps, list_of_max_evals, strict=True):
             for threshold_gamma in final_thresholds_gamma:
                 if not self._is_in_energy_data(
-                    trotter_steps=trotter_steps, threshold_gamma=threshold_gamma
+                    trotter_steps=trotter_steps,
+                    threshold_gamma=threshold_gamma,
+                    max_evals=max_evals,
                 ):
-                    missing_datapoints.append((trotter_steps, threshold_gamma))
+                    missing_datapoints.append(((trotter_steps, max_evals), threshold_gamma))
 
-        for trotter_steps, threshold_gamma in tqdm(
+        for trotter_steps_max_evals, threshold_gamma in tqdm(
             missing_datapoints, desc="Energy calc", position=0, disable=len(missing_datapoints) <= 1
         ):
+            trotter_steps = trotter_steps_max_evals[0]
+            max_evals = trotter_steps_max_evals[1]
             energy, optimal_parameters, _ = self._calculate_statevector_energy(
-                trotter_steps=trotter_steps, threshold_gamma=threshold_gamma
+                trotter_steps=trotter_steps, threshold_gamma=threshold_gamma, max_evals=max_evals
             )
             # Convert to python datatypes (should already be the case but to be sure)
             tmp_datapoint = {
@@ -238,6 +249,7 @@ class VHAPlots:
                 "energy": float(energy),
                 "trotter_steps": int(trotter_steps),
                 "threshold_gamma": float(threshold_gamma),
+                "max_evals": int(max_evals),
                 "optimal_parameters": [float(p) for p in optimal_parameters],
             }
 
@@ -252,6 +264,7 @@ class VHAPlots:
         trotter_steps: int,
         threshold_gamma: float,
         molecule_name: str | None = None,
+        max_evals: int = 1000,
         return_full_datapoint: bool = False,
     ) -> float | list:
         """Gets the energy for given trotter steps and truncation threshold.
@@ -264,16 +277,13 @@ class VHAPlots:
         idx_molecule_name = self.energy_data_header.index("molecule_name")
         idx_trotter_steps = self.energy_data_header.index("trotter_steps")
         idx_threshold_gamma = self.energy_data_header.index("threshold_gamma")
+        idx_max_evals = self.energy_data_header.index("max_evals")
         idx_energy = self.energy_data_header.index("energy")
         for datapoint in self.energy_data:
             if (
                 datapoint[idx_molecule_name] == molecule_name
-                and np.isclose(
-                    datapoint[idx_trotter_steps],
-                    trotter_steps,
-                    rtol=self._epsilon,
-                    atol=self._epsilon,
-                )
+                and int(datapoint[idx_trotter_steps]) == int(trotter_steps)
+                and int(datapoint[idx_max_evals]) == int(max_evals)
                 and np.isclose(
                     datapoint[idx_threshold_gamma],
                     threshold_gamma,
@@ -285,8 +295,9 @@ class VHAPlots:
                     return datapoint
                 return float(datapoint[idx_energy])
         raise ValueError(
-            f"Energy for {trotter_steps} trotter steps and threshold γ "  # noqa: RUF001
-            f"of {threshold_gamma} not found ({molecule_name})."
+            f"Energy for {trotter_steps} trotter steps, threshold γ "  # noqa: RUF001
+            f"of {threshold_gamma} and maximum number of function evaluations of {max_evals}"
+            f"not found ({molecule_name})."
             "Please invoke '_calculate_missing_energies' first."
         )
 
@@ -294,6 +305,7 @@ class VHAPlots:
         self,
         list_of_trotter_steps: Iterable[int] | int,
         thresholds_gamma: Iterable[float] | float,
+        max_evals: int | Sequence[int] = 1000,
         return_full_datapoint: bool = False,
     ) -> float | list | np.ndarray:
         """Gets the energy for given Trotter steps and truncation thresholds.
@@ -324,10 +336,14 @@ class VHAPlots:
             list_of_trotter_steps = [list_of_trotter_steps]
         if not isinstance(thresholds_gamma, Iterable):
             thresholds_gamma = [thresholds_gamma]
+        if not isinstance(max_evals, Sequence):
+            max_evals = [max_evals]
         final_thresholds_gamma = self._get_final_thresholds_gamma(thresholds_gamma=thresholds_gamma)
 
         self._calculate_missing_energies(
-            list_of_trotter_steps=list_of_trotter_steps, thresholds_gamma=final_thresholds_gamma
+            list_of_trotter_steps=list_of_trotter_steps,
+            thresholds_gamma=final_thresholds_gamma,
+            max_evals=max_evals,
         )
 
         energies = np.empty(
@@ -339,6 +355,7 @@ class VHAPlots:
                 energies[i, j] = self._get_energy(
                     trotter_steps=trotter_steps,
                     threshold_gamma=threshold_gamma,
+                    max_evals=max_evals,
                     return_full_datapoint=return_full_datapoint,
                 )
         energies_squeezed = np.squeeze(energies)
@@ -352,6 +369,7 @@ class VHAPlots:
         self,
         trotter_steps: int = 1,
         threshold_gamma: float = 1.0,
+        max_evals: int = 1000,
         ansatz: BlueprintCircuit = None,
     ) -> tuple[float, list[float], BlueprintCircuit]:
         """Gets the ground state energy of statevector simulator calculation of tVHA.
@@ -360,6 +378,7 @@ class VHAPlots:
             trotter_steps: Number of steps for Trotter of the (adiabatic)
                 time evolution.
             threshold_gamma: The truncation threshold to use for building the tVHA ansatz.
+            max_evals: Maximum number of function evaluations of the optimization algorithm (SBPLX).
             ansatz: Only use this, if you explicitly need another ansatz than tVHA.
                 If this arg is used, threshold_gamma and trotter_steps are silently discarded.
 
@@ -379,7 +398,7 @@ class VHAPlots:
         vqe = VQE(
             estimator=estimator,
             ansatz=ansatz,
-            optimizer=SBPLX(max_evals=1000),
+            optimizer=SBPLX(max_evals=max_evals),
             initial_point=ansatz.get_initial_point(),
         )
         try:
@@ -454,13 +473,14 @@ class VHAPlots:
             return numerical_energies
 
     def get_reference_UCC_energy(  # noqa: N802
-        self, excitations: Iterable[int] = (1, 2)
+        self, excitations: Iterable[int] = (1, 2), max_evals: int = 1000
     ) -> dict[str, float | list[float]]:
         """Gets energy from calculation with UCCSD ansatz as reference.
 
         Args:
             excitations: By default singles and doubles (i.e. UCCSD); for other excitations, pass
                 a list with the excitation numbers (1=singles, 2=doubles, 3=triples, 4=duadruples).
+            max_evals: Maximum number of function evaluations of the optimization algorithm (SBPLX).
 
         Returns: dict(entry_name, value), where entry_name can be 'energy' and 'optimal_point'."""
         excitationstring = ""
@@ -493,13 +513,15 @@ class VHAPlots:
             initial_point.problem = self.problem
             ucc.get_initial_point = initial_point.to_numpy_array
 
-            energy, optimal_point, _ = self._calculate_statevector_energy(ansatz=ucc)
+            energy, optimal_point, _ = self._calculate_statevector_energy(
+                ansatz=ucc, max_evals=max_evals
+            )
             file.write_text(
                 json.dumps({"energy": energy, "optimal_point": optimal_point}, sort_keys=False)
             )
             return {"energy": energy, "optimal_point": optimal_point}
 
-    def get_reference_HEA_energy(self) -> dict[str, float | list[float]]:  # noqa: N802
+    def get_reference_HEA_energy(self, max_evals: int = 1000) -> dict[str, float | list[float]]:  # noqa: N802
         """Gets energy from calculation with UCCSD ansatz as reference.
 
         Returns: dict(energy_name, energy_value)"""
@@ -516,7 +538,9 @@ class VHAPlots:
                 reps=3,
             )
             hea.get_initial_point = lambda: hea.preferred_init_points
-            energy, optimal_point, _ = self._calculate_statevector_energy(ansatz=hea)
+            energy, optimal_point, _ = self._calculate_statevector_energy(
+                ansatz=hea, max_evals=max_evals
+            )
             file.write_text(
                 json.dumps({"energy": energy, "optimal_point": optimal_point}, sort_keys=False)
             )
@@ -1038,6 +1062,7 @@ class VHAPlots:
         trotter_steps: int | Iterable[int] = 1,
         thresholds_gamma: Iterable[float] | None = None,
         add_title: bool = True,
+        max_evals: int = 1000,
     ) -> None:
         """Plots energy of tVHA depending on the truncation threshold.
 
@@ -1049,6 +1074,7 @@ class VHAPlots:
             thresholds_gamma: the truncation thresholds to use for this plot.
                 If 'None', all possible truncation thresholds are used.
             add_title: whether to add a title to the plot.
+            max_evals: Maximum number of function evaluations of the optimization algorithm (SBPLX).
         """
         list_of_trotter_steps = (
             sorted(trotter_steps) if isinstance(trotter_steps, Iterable) else [trotter_steps]
@@ -1066,11 +1092,15 @@ class VHAPlots:
             )
 
         self._calculate_missing_energies(
-            list_of_trotter_steps=list_of_trotter_steps, thresholds_gamma=thresholds_gamma
+            list_of_trotter_steps=list_of_trotter_steps,
+            thresholds_gamma=thresholds_gamma,
+            max_evals=max_evals,
         )
         energies = {
             trotter_steps: tuple(
-                self._get_energy(trotter_steps=trotter_steps, threshold_gamma=i)
+                self._get_energy(
+                    trotter_steps=trotter_steps, threshold_gamma=i, max_evals=max_evals
+                )
                 for i in thresholds_gamma
             )
             for trotter_steps in list_of_trotter_steps
@@ -1104,8 +1134,10 @@ class VHAPlots:
         energy_fci = self.numerical_energies["computed_energy"]
 
         # UCC
-        energy_uccsd = self.get_reference_UCC_energy()["energy"]
-        energy_uccsdt = self.get_reference_UCC_energy(excitations=[1, 2, 3])["energy"]
+        energy_uccsd = self.get_reference_UCC_energy(max_evals=max_evals)["energy"]
+        energy_uccsdt = self.get_reference_UCC_energy(excitations=[1, 2, 3], max_evals=max_evals)[
+            "energy"
+        ]
 
         # UCCSD
         if np.isclose(energy_uccsd, energy_fci):
@@ -1138,7 +1170,7 @@ class VHAPlots:
             )
 
         # HEA
-        energy_hea = self.get_reference_HEA_energy()["energy"]
+        energy_hea = self.get_reference_HEA_energy(max_evals=max_evals)["energy"]
         if np.isclose(energy_hea, energy_fci):
             labels_close_to_fci.append("HEA")
         elif np.isclose(energy_uccsd, energy_hf):
@@ -1192,7 +1224,7 @@ class VHAPlots:
                 f"Energy of tVHA depending on the truncation threshold (${self.molecule_name}$)"
             )
         plt.xlim(xmin, xmax)
-        filename = f"{self.molecule_name}_energy_over_truncation_threshold"
+        filename = f"{self.molecule_name}_energy_over_truncation_threshold_{max_evals}maxevals"
         filename += "_" + "_".join(str(trotter_steps) for trotter_steps in list_of_trotter_steps)
         filename += ".svg"
         plt.savefig(self.output_path.joinpath(filename), format="svg")
@@ -1203,6 +1235,7 @@ class VHAPlots:
         list_of_trotter_steps: Iterable[int] = (1, 2, 3, 4, 5),
         threshold_gamma: float | Iterable[float] = 1.0,
         add_title: bool = True,
+        max_evals: int | Sequence[int] = 1000,
     ) -> None:
         """Plots the energy of tVHA depending on the number of Trotter steps.
 
@@ -1213,9 +1246,14 @@ class VHAPlots:
                 If given as list, all list elements are used in sorted order
                 creating a line for each truncation threshold.
             add_title: whether to add a title to the plot.
+            max_evals: Maximum number of function evaluations of the optimization algorithm (SBPLX).
 
         """
         list_of_trotter_steps = sorted(list_of_trotter_steps)
+        if isinstance(max_evals, Iterable):
+            list_of_max_evals = list(max_evals)
+        else:
+            list_of_max_evals = [max_evals] * len(list_of_trotter_steps)
         if isinstance(threshold_gamma, Iterable):
             thresholds_gamma = self._get_final_thresholds_gamma(thresholds_gamma=threshold_gamma)
         else:
@@ -1229,12 +1267,14 @@ class VHAPlots:
             )
 
         self._calculate_missing_energies(
-            list_of_trotter_steps=list_of_trotter_steps, thresholds_gamma=thresholds_gamma
+            list_of_trotter_steps=list_of_trotter_steps,
+            thresholds_gamma=thresholds_gamma,
+            max_evals=list_of_max_evals,
         )
         energies = {
             threshold_gamma: tuple(
-                self._get_energy(trotter_steps=i, threshold_gamma=threshold_gamma)
-                for i in list_of_trotter_steps
+                self._get_energy(trotter_steps=i, threshold_gamma=threshold_gamma, max_evals=e)
+                for i, e in zip(list_of_trotter_steps, list_of_max_evals, strict=True)
             )
             for threshold_gamma in thresholds_gamma
         }
@@ -1266,7 +1306,7 @@ class VHAPlots:
         energy_fci = self.numerical_energies["computed_energy"]
 
         # UCCSD
-        energy_uccsd = self.get_reference_UCC_energy()["energy"]
+        energy_uccsd = self.get_reference_UCC_energy(max_evals=max_evals)["energy"]
         if np.isclose(energy_uccsd, energy_fci):
             labels_close_to_fci.append("UCCSD")
         elif np.isclose(energy_uccsd, energy_hf):
@@ -1282,7 +1322,9 @@ class VHAPlots:
             )
 
         # UCCSDT
-        energy_uccsdt = self.get_reference_UCC_energy(excitations=[1, 2, 3])["energy"]
+        energy_uccsdt = self.get_reference_UCC_energy(excitations=[1, 2, 3], max_evals=max_evals)[
+            "energy"
+        ]
         if np.isclose(energy_uccsdt, energy_fci):
             labels_close_to_fci.append("UCCSDT")
         elif not np.isclose(energy_uccsdt, energy_uccsd):
@@ -1296,7 +1338,7 @@ class VHAPlots:
             )
 
         # HEA
-        energy_hea = self.get_reference_HEA_energy()["energy"]
+        energy_hea = self.get_reference_HEA_energy(max_evals=max_evals)["energy"]
         if np.isclose(energy_hea, energy_fci):
             labels_close_to_fci.append("HEA")
         elif np.isclose(energy_uccsd, energy_hf):
@@ -1348,6 +1390,7 @@ class VHAPlots:
         if add_title:
             plt.title(
                 f"Energy of tVHA denpending on the number of Trotter steps (${self.molecule_name}$)"
+                f"\n({list_of_max_evals} function evaluations)"
             )
         plt.xlim(xmin, xmax)
         filename = f"{self.molecule_name}_energy_over_trotter_steps"
@@ -1362,6 +1405,7 @@ class VHAPlots:
         list_of_trotter_steps: Iterable[int] = (1, 2, 3, 4, 5),
         thresholds_gamma: Iterable[float] | None = None,
         add_title: bool = True,
+        max_evals: int | Iterable[int] = 1000,
     ) -> None:
         """Plots energy of tVHA depending on truncation threshold and Trotter steps as heatmap.
 
@@ -1370,15 +1414,22 @@ class VHAPlots:
             thresholds_gamma: the truncation thresholds to use for this plot.
                 If 'None', all possible truncation thresholds are used.
             add_title: whether to add a title to the plot.
+            max_evals: Maximum number of function evaluations of the optimization algorithm (SBPLX).
         """
         list_of_trotter_steps = sorted(list_of_trotter_steps)
+        if isinstance(max_evals, Iterable):
+            list_of_max_evals = list(max_evals)
+        else:
+            list_of_max_evals = [max_evals] * len(list_of_trotter_steps)
         if thresholds_gamma is None:
             thresholds_gamma = self._vha_dummy.possible_thresholds_gamma
         else:
             thresholds_gamma = self._get_final_thresholds_gamma(thresholds_gamma=thresholds_gamma)
 
         self._calculate_missing_energies(
-            list_of_trotter_steps=list_of_trotter_steps, thresholds_gamma=thresholds_gamma
+            list_of_trotter_steps=list_of_trotter_steps,
+            thresholds_gamma=thresholds_gamma,
+            max_evals=list_of_max_evals,
         )
 
         A, B = np.meshgrid(thresholds_gamma, list_of_trotter_steps, indexing="ij")  # noqa: N806
@@ -1387,6 +1438,7 @@ class VHAPlots:
             return self._get_energy(
                 threshold_gamma=thresholds_gamma[int(i)],
                 trotter_steps=list_of_trotter_steps[int(j)],
+                max_evals=list_of_max_evals[int(j)],
             )
 
         energies_reshaped = np.fromfunction(
@@ -1400,7 +1452,10 @@ class VHAPlots:
         plt.xlabel("Truncation threshold")
         plt.ylabel("Number of Trotter steps")
         if add_title:
-            plt.title(f"Energy in Hartree (${self.molecule_name}$)")
+            plt.title(
+                f"Energy in Hartree (${self.molecule_name}$)\n"
+                f"({list_of_max_evals} function evaluations)"
+            )
         ax.yaxis.set_major_locator(MaxNLocator(integer=True))
         plt.savefig(
             self.output_path.joinpath(
