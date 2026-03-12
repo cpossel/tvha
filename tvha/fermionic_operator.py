@@ -152,7 +152,7 @@ def get_compressed_hamiltonian(self: FermionicOp) -> FermionicOp:
 
     The Hamiltonian's information content is equivalent to the one from
     FermionicOp.get_antisymmetrized_hamiltonian().
-    The comporessed Hamiltonian representation is not antisymmetric but yields the same
+    The compressed Hamiltonian representation is not antisymmetric but yields the same
     Pauli strings/qubit operator after mapping as the antisymmetrized Hamiltonian.
 
     Two-body operators a†_i a†_j a_k a_l are antisymmetrized then redundant ones merged;
@@ -350,8 +350,7 @@ def get_permuted_label(label: str) -> tuple[str, bool]:
         switch_sign = not switch_sign
     # Rebuild the label
     label_permuted = (
-        f"{op[0][0]}_{op[0][1]} {op[1][0]}_{op[1][1]} "
-        f"{op[2][0]}_{op[2][1]} {op[3][0]}_{op[3][1]}"
+        f"{op[0][0]}_{op[0][1]} {op[1][0]}_{op[1][1]} {op[2][0]}_{op[2][1]} {op[3][0]}_{op[3][1]}"
     )
     return label_permuted, switch_sign
 
