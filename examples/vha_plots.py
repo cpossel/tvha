@@ -8,6 +8,7 @@ import json
 import logging
 from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
+from typing import Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -94,7 +95,8 @@ class VHAPlots:
         self._epsilon = 1e-13  # tolerance for floats to be considered equal
         output_path.mkdir(exist_ok=True)
         self.output_path = output_path.resolve()
-        self.file_energies = self.output_path.joinpath("energies_vha_statevector.csv")
+        self.file_energies = self.output_path.joinpath(f"energies_simulator_{molecule_name}.csv")
+        self.molecule_name = molecule_name
         self.problem = problem
         self.mapper = mapper or JordanWignerMapper()
         # Dummy VHA in order to easily access the final threshold gamma
@@ -102,20 +104,71 @@ class VHAPlots:
 
         self.numerical_energies = self.get_numerical_energy()
 
-        self.molecule_name = molecule_name
+        self._init_alternative_ansatze()
+
         self.energy_data_header, self.energy_data = self._get_energies_from_file(
             file=self.file_energies
         )
 
     def _get_final_thresholds_gamma(self, thresholds_gamma: float | Sequence[float]) -> list[float]:
         """Gets sorted list of final truncation thresholds with removed duplicates."""
-        if isinstance(thresholds_gamma, float | int):
+        if not isinstance(thresholds_gamma, Iterable):
             thresholds_gamma = [thresholds_gamma]
         return sorted({self._vha_dummy.get_threshold_gamma(t)[1] for t in thresholds_gamma})
 
     def _get_final_threshold_gamma(self, threshold_gamma: float) -> float:
         """Gets final truncation threshold."""
         return self._vha_dummy.get_threshold_gamma(threshold_gamma)[1]
+
+    def _init_alternative_ansatze(self) -> None:
+        ansatzes = {}
+
+        uccsd = UCC(
+            excitations=[1, 2],
+            num_spatial_orbitals=self.problem.num_spatial_orbitals,
+            num_particles=self.problem.num_particles,
+            qubit_mapper=self.mapper,
+            initial_state=HartreeFock(
+                num_spatial_orbitals=self.problem.num_spatial_orbitals,
+                num_particles=self.problem.num_particles,
+                qubit_mapper=self.mapper,
+            ),
+        )
+        initial_point_sd = HFInitialPoint()
+        initial_point_sd.ansatz = uccsd
+        initial_point_sd.problem = self.problem
+        uccsd.get_initial_point = initial_point_sd.to_numpy_array
+        ansatzes["UCCSD"] = uccsd
+
+        uccsdt = UCC(
+            excitations=[1, 2, 3],
+            num_spatial_orbitals=self.problem.num_spatial_orbitals,
+            num_particles=self.problem.num_particles,
+            qubit_mapper=self.mapper,
+            initial_state=HartreeFock(
+                num_spatial_orbitals=self.problem.num_spatial_orbitals,
+                num_particles=self.problem.num_particles,
+                qubit_mapper=self.mapper,
+            ),
+        )
+        initial_point_sdt = HFInitialPoint()
+        initial_point_sdt.ansatz = uccsdt
+        initial_point_sdt.problem = self.problem
+        uccsdt.get_initial_point = initial_point_sdt.to_numpy_array
+        ansatzes["UCCSDT"] = uccsdt
+
+        hea = EfficientSU2_HartreeFock(
+            num_spatial_orbitals=self.problem.num_spatial_orbitals,
+            num_particles=self.problem.num_particles,
+            mapper=self.mapper,
+            num_qubits=len(self.mapper.map(self.problem.second_q_ops()[0])[0].paulis[0]),
+            entanglement="reverse_linear",
+            reps=3,
+        )
+        hea.get_initial_point = lambda: hea.preferred_init_points
+        ansatzes["HEA"] = hea
+
+        self._alternative_ansatze = ansatzes
 
     def _get_energies_from_file(self, file: Path) -> tuple[tuple[str], list]:
         """Reads energy data from csv file.
@@ -129,38 +182,51 @@ class VHAPlots:
         try:
             data = pd.read_csv(
                 file,
-                index_col="id",
+                index_col=None,
                 converters={"optimal_parameters": lambda x: json.loads(x)},
             )
             energy_data_header = tuple(data.columns.tolist())
-            # data_clean = data.drop_duplicates(
-            #     subset=("molecule_name", "trotter_steps", "threshold_gamma"),
-            #     keep="first",
-            #     ignore_index=True,
-            # )
-            energy_data = data.values.tolist()
+            data_clean = data.drop_duplicates(
+                subset=(
+                    "ansatz_name",
+                    "trotter_steps",
+                    "threshold_gamma",
+                    "max_evals",
+                    "cx_error_prob",
+                ),
+                keep="first",
+                ignore_index=True,
+            )
+            energy_data = data_clean.values.tolist()
         except FileNotFoundError:
             logger.info(
                 "Can't find the file that is supposed to contain the energy data.", exc_info=True
             )
             energy_data_header = (
-                "molecule_name",
                 "energy",
+                "ansatz_name",
                 "trotter_steps",
                 "threshold_gamma",
+                "max_evals",
+                "cx_error_prob",
                 "optimal_parameters",
             )
             energy_data = []
         return energy_data_header, energy_data
 
     def _flush_datapoint_to_file(self, energy_datapoint: list) -> None:
-        """Flushs a single energy datapoint to the file 'self.file_energies' in append mode."""
+        """Flushs a single energy datapoint to the file 'self.file_energies' in append mode.
+
+        If you want to format the file in a more human readable format, use this bash command:
+        ```column -s";" -o";" -t energies_simulator_[molecule_name].csv > energies_human.csv```
+        replacing [molecule_name] with the actual molecule name.
+        """
         if not self.file_energies.exists() or self.file_energies.stat().st_size == 0:
             with self.file_energies.open("a") as file:
                 file.write(",".join(self.energy_data_header) + "\n")
         with self.file_energies.open("a") as file:
             file.write(
-                ",".join(
+                ";".join(
                     (
                         entry
                         if isinstance(entry, str)
@@ -177,11 +243,13 @@ class VHAPlots:
 
     def _calculate_missing_energies(
         self,
-        trotter_steps: int | Sequence[int],
-        thresholds_gamma: float | Sequence[float],
+        ansatz_name: Literal["tVHA", "UCCSD", "UCCSDT", "HEA"] = "tVHA",
+        trotter_steps: int | Sequence[int] | None = 1,
+        thresholds_gamma: float | Sequence[float] | None = 1,
         max_evals: int | Sequence[int] = 1000,
+        cx_error_prob: int | float | Sequence[int] | Sequence[float] = 0,
     ) -> None:
-        """Calculates the energy for the given (list of) trotter steps and thresholds gamma.
+        """Calculates the energy for the given arguments.
 
         Only re-calculates them if they aren't already in self.energy_data yet.
         Saves the calculated energies both in the variable 'self.energy_data' and
@@ -195,6 +263,9 @@ class VHAPlots:
             if isinstance(max_evals, Iterable)
             else [max_evals] * len(list_of_trotter_steps)
         )
+        list_of_cx_error_prob = (
+            list(cx_error_prob) if isinstance(cx_error_prob, Iterable) else [cx_error_prob]
+        )
         if any(not isinstance(i, int) for i in list_of_trotter_steps) or any(
             i < 1 for i in list_of_trotter_steps
         ):
@@ -202,30 +273,44 @@ class VHAPlots:
 
         final_thresholds_gamma = self._get_final_thresholds_gamma(thresholds_gamma=thresholds_gamma)
 
+        # The intermediate step of saving the missing datapoints is needed for the tqdm loop to show
+        # correctly how many values must to be calculated.
         missing_datapoints = []
-        for trotter_steps, max_evals in zip(list_of_trotter_steps, list_of_max_evals, strict=True):
-            for threshold_gamma in final_thresholds_gamma:
-                if not self._get_energy(
-                    trotter_steps=trotter_steps,
-                    threshold_gamma=threshold_gamma,
-                    max_evals=max_evals,
-                    suppress_error=True,
-                ):
-                    missing_datapoints.append((trotter_steps, max_evals, threshold_gamma))
+        for cx_error_prob in list_of_cx_error_prob:
+            for trotter_steps, max_evals in zip(
+                list_of_trotter_steps, list_of_max_evals, strict=True
+            ):
+                for threshold_gamma in final_thresholds_gamma:
+                    if not self._get_energy(
+                        ansatz_name=ansatz_name,
+                        trotter_steps=trotter_steps,
+                        threshold_gamma=threshold_gamma,
+                        max_evals=max_evals,
+                        cx_error_prob=cx_error_prob,
+                        suppress_error=True,
+                    ):
+                        missing_datapoints.append(
+                            (ansatz_name, cx_error_prob, trotter_steps, max_evals, threshold_gamma)
+                        )
 
-        for trotter_steps, max_evals, threshold_gamma in tqdm(
+        for ansatz_name, cx_error_prob, trotter_steps, max_evals, threshold_gamma in tqdm(
             missing_datapoints, desc="Energy calc", position=0, disable=len(missing_datapoints) <= 1
         ):
             energy, optimal_parameters, _ = self._calculate_statevector_energy(
-                trotter_steps=trotter_steps, threshold_gamma=threshold_gamma, max_evals=max_evals
+                ansatz_name=ansatz_name,
+                trotter_steps=trotter_steps,
+                threshold_gamma=threshold_gamma,
+                max_evals=max_evals,
+                cx_error_prob=cx_error_prob,
             )
             # Convert to python datatypes (should already be the case but to be sure)
             tmp_datapoint = {
-                "molecule_name": str(self.molecule_name),
                 "energy": float(energy),
+                "ansatz_name": str(ansatz_name),
                 "trotter_steps": int(trotter_steps),
                 "threshold_gamma": float(threshold_gamma),
                 "max_evals": int(max_evals),
+                "cx_error_prob": float(cx_error_prob),
                 "optimal_parameters": [float(p) for p in optimal_parameters],
             }
 
@@ -237,13 +322,14 @@ class VHAPlots:
 
     def _get_energy(
         self,
-        trotter_steps: int,
-        threshold_gamma: float,
-        molecule_name: str | None = None,
+        ansatz_name: Literal["tVHA", "UCCSD", "UCCSDT", "HEA"] = "tVHA",
+        trotter_steps: int | None = 1,
+        threshold_gamma: float | None = 1,
         max_evals: int = 1000,
+        cx_error_prob: int | float = 0,
         return_full_datapoint: bool = False,
         suppress_error: bool = False,
-    ) -> float | list | False:
+    ) -> float | list | bool:
         """Gets the energy for given trotter steps and truncation threshold.
 
         Searches self.energy_data for it, so no previous check is performed whether the datapoint
@@ -251,24 +337,24 @@ class VHAPlots:
         If the datapoint is not found in self.energy_data, it raises a ValueError or returns False,
         dependent on the value of 'suppress_error'.
         """
-        if molecule_name is None:
-            molecule_name = self.molecule_name
-        idx_molecule_name = self.energy_data_header.index("molecule_name")
+        idx_ansatz_name = self.energy_data_header.index("ansatz_name")
         idx_trotter_steps = self.energy_data_header.index("trotter_steps")
         idx_threshold_gamma = self.energy_data_header.index("threshold_gamma")
         idx_max_evals = self.energy_data_header.index("max_evals")
+        idx_cx_error_prob = self.energy_data_header.index("cx_error_prob")
         idx_energy = self.energy_data_header.index("energy")
         for datapoint in self.energy_data:
             if (
-                datapoint[idx_molecule_name] == molecule_name
-                and int(datapoint[idx_trotter_steps]) == int(trotter_steps)
-                and int(datapoint[idx_max_evals]) == int(max_evals)
+                datapoint[idx_ansatz_name] == ansatz_name
+                and datapoint[idx_trotter_steps] == trotter_steps
                 and np.isclose(
                     datapoint[idx_threshold_gamma],
                     threshold_gamma,
                     rtol=self._epsilon,
                     atol=self._epsilon,
                 )
+                and datapoint[idx_max_evals] == max_evals
+                and datapoint[idx_cx_error_prob] == cx_error_prob
             ):
                 if return_full_datapoint:
                     return datapoint
@@ -278,15 +364,17 @@ class VHAPlots:
         raise ValueError(
             f"Energy for {trotter_steps} trotter steps, threshold γ "  # noqa: RUF001
             f"of {threshold_gamma} and maximum number of function evaluations of {max_evals}"
-            f"not found ({molecule_name})."
+            f"not found ({self.molecule_name})."
             "Please invoke '_calculate_missing_energies' first."
         )
 
     def get_energies(
         self,
-        trotter_steps: int | Sequence[int],
-        thresholds_gamma: float | Sequence[float],
+        ansatz_name: Literal["tVHA", "UCCSD", "UCCSDT", "HEA"] = "tVHA",
+        trotter_steps: int | Sequence[int] | None = 1,
+        thresholds_gamma: float | Sequence[float] | None = 1,
         max_evals: int | Sequence[int] = 1000,
+        cx_error_prob: float | Sequence[float] = 0,
         return_full_datapoint: bool = False,
     ) -> float | list | np.ndarray:
         """Gets the energy for given Trotter steps and truncation thresholds.
@@ -321,28 +409,36 @@ class VHAPlots:
             if isinstance(max_evals, Iterable)
             else [max_evals] * len(list_of_trotter_steps)
         )
+        list_of_cx_error_prob = (
+            list(cx_error_prob) if isinstance(cx_error_prob, Iterable) else [cx_error_prob]
+        )
         final_thresholds_gamma = self._get_final_thresholds_gamma(thresholds_gamma=thresholds_gamma)
 
         self._calculate_missing_energies(
-            list_of_trotter_steps=list_of_trotter_steps,
+            ansatz_name=ansatz_name,
+            trotter_steps=list_of_trotter_steps,
             thresholds_gamma=final_thresholds_gamma,
-            max_evals=max_evals,
+            max_evals=list_of_max_evals,
+            cx_error_prob=list_of_cx_error_prob,
         )
 
         energies = np.empty(
-            (len(list_of_trotter_steps), len(final_thresholds_gamma)),
+            (len(list_of_trotter_steps), len(final_thresholds_gamma), len(list_of_cx_error_prob)),
             dtype=object if return_full_datapoint else float,
         )
         for i, (trotter_steps, max_evals) in enumerate(
             zip(list_of_trotter_steps, list_of_max_evals, strict=True)
         ):
             for j, threshold_gamma in enumerate(final_thresholds_gamma):
-                energies[i, j] = self._get_energy(
-                    trotter_steps=trotter_steps,
-                    threshold_gamma=threshold_gamma,
-                    max_evals=max_evals,
-                    return_full_datapoint=return_full_datapoint,
-                )
+                for k, cx_error_prob in enumerate(list_of_cx_error_prob):
+                    energies[i, j, k] = self._get_energy(
+                        ansatz_name=ansatz_name,
+                        trotter_steps=trotter_steps,
+                        threshold_gamma=threshold_gamma,
+                        max_evals=max_evals,
+                        cx_error_prob=cx_error_prob,
+                        return_full_datapoint=return_full_datapoint,
+                    )
         energies_squeezed = np.squeeze(energies)
 
         if np.ndim(energies_squeezed) == 0:
@@ -352,39 +448,55 @@ class VHAPlots:
 
     def _calculate_statevector_energy(
         self,
+        ansatz_name: Literal["tVHA", "UCCSD", "UCCSDT", "HEA"] = "tVHA",
         trotter_steps: int = 1,
         threshold_gamma: float = 1.0,
         max_evals: int = 1000,
-        ansatz: BlueprintCircuit = None,
+        cx_error_prob: int | float = 0,
     ) -> tuple[float, list[float], BlueprintCircuit]:
         """Gets the ground state energy of statevector simulator calculation of tVHA.
 
         Args:
+            ansatz_name: Only use this, if you explicitly need another ansatz than tVHA.
+                If this arg is used, threshold_gamma and trotter_steps are silently discarded.
             trotter_steps: Number of steps for Trotter of the (adiabatic)
                 time evolution.
             threshold_gamma: The truncation threshold to use for building the tVHA ansatz.
             max_evals: Maximum number of function evaluations of the optimization algorithm (SBPLX).
-            ansatz: Only use this, if you explicitly need another ansatz than tVHA.
-                If this arg is used, threshold_gamma and trotter_steps are silently discarded.
+            cx_error_prob: The CNOT gate depolarizing error of a simple noise model.
+                Choose '0' for statevector calculation.
 
         Returns: tuple(energy, optimal_parameters, ansatz)
             energy: electronic part of groundstate energy of statevector calculation.
             optimal_parameters: ansatz parameters after optimization loop.
             ansatz: (VHA) ansatz used for the calculation
         """
-        estimator = StatevectorEstimator()
-        if ansatz is None:
+        if cx_error_prob == 0:
+            estimator = StatevectorEstimator()
+        else:
+            error_2q = noise.depolarizing_error(cx_error_prob, 2)
+            noise_model = noise.NoiseModel()
+            noise_model.add_all_qubit_quantum_error(error_2q, ["cx"])
+            estimator = AerEstimator(
+                backend_options={"noise_model": noise_model},
+                approximation=True,  # TODO: find out which combination of options (approximation, shots) is suitable
+                # run_options={"shots": 1e4},  # TODO: find out appropriate number of shots
+            )
+        if ansatz_name in ("tVHA", "VHA", None):
             ansatz = VariationalHamiltonianAnsatz(
                 problem=self.problem,
                 trotter_steps=trotter_steps,
                 threshold_gamma=threshold_gamma,
                 mapper=self.mapper,
             )
+            initial_point = ansatz.get_initial_point()
+        else:
+            ansatz = self._alternative_ansatze[ansatz_name]
         vqe = VQE(
             estimator=estimator,
             ansatz=ansatz,
             optimizer=SBPLX(max_evals=max_evals),
-            initial_point=ansatz.get_initial_point(),
+            initial_point=initial_point,
         )
         try:
             second_q_op = ansatz.hamilton_operator  # for VHA
@@ -1217,7 +1329,7 @@ class VHAPlots:
                 f"\n({list_of_max_evals} function evaluations)"
             )
         plt.xlim(xmin, xmax)
-        filename = f"{self.molecule_name}_energy_over_truncation_threshold"
+        filename = f"{self.molecule_name}_energy_over_truncation_threshold_"
         filename += "_".join(str(trotter_steps) for trotter_steps in list_of_trotter_steps)
         filename += ".svg"
         plt.savefig(self.output_path.joinpath(filename), format="svg")
@@ -1389,8 +1501,8 @@ class VHAPlots:
                 f"\n({list_of_max_evals} function evaluations)"
             )
         plt.xlim(xmin, xmax)
-        filename = f"{self.molecule_name}_energy_over_trotter_steps"
-        filename += "_" + "_".join(f"{threshold_gamma:.4g}" for threshold_gamma in thresholds_gamma)
+        filename = f"{self.molecule_name}_energy_over_trotter_steps_"
+        filename += "_".join(f"{threshold_gamma:.4g}" for threshold_gamma in thresholds_gamma)
         filename += ".svg"
         ax.xaxis.set_major_locator(MaxNLocator(integer=True))
         plt.savefig(self.output_path.joinpath(filename), format="svg")
@@ -2124,8 +2236,8 @@ def main() -> None:
     # unless stated explicitly to be the total energy.
 
     if logger.getEffectiveLevel() <= logging.DEBUG:
-        datapoint = vha_plots.get_energies(
-            list_of_trotter_steps=1, thresholds_gamma=1.0, return_full_datapoint=True
+        datapoint = vha_plots._get_energy(
+            trotter_steps=1, thresholds_gamma=1.0, return_full_datapoint=True
         )
         energy_statevector = datapoint[vha_plots.energy_data_header.index("energy")]
         optimal_parameters = datapoint[vha_plots.energy_data_header.index("optimal_parameters")]
