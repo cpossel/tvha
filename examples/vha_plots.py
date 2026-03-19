@@ -391,7 +391,8 @@ class VHAPlots:
                             atol=self._epsilon,
                         )
                         for threshold_gamma in list_of_threshold_gamma
-                    ]
+                    ],
+                    axis=0,
                 )
                 & df["max_evals"].isin(list_of_max_evals)
                 & np.any(
@@ -403,7 +404,8 @@ class VHAPlots:
                             atol=self._epsilon,
                         )
                         for cx_error_prob in list_of_cx_error_prob
-                    ]
+                    ],
+                    axis=0,
                 )
             )
         else:
@@ -419,7 +421,8 @@ class VHAPlots:
                             atol=self._epsilon,
                         )
                         for cx_error_prob in list_of_cx_error_prob
-                    ]
+                    ],
+                    axis=0,
                 )
             )
         return df[mask]
@@ -2177,7 +2180,7 @@ def main() -> None:
     if plot_energy_over_truncation_threshold:
         print("Plotting energy over truncation threshold...")
         vha_plots.plot_energy_over_truncation_threshold(
-            trotter_steps=1, thresholds_gamma=thresholds_gamma, add_title=add_title
+            trotter_steps=1, list_of_threshold_gamma=thresholds_gamma, add_title=add_title
         )
         print("Done.")
 
@@ -2185,7 +2188,7 @@ def main() -> None:
         print("Plotting energy over Trotter steps...")
         vha_plots.plot_energy_over_trotter_steps(
             list_of_trotter_steps=list_of_trotter_steps,
-            threshold_gamma=np.linspace(1, 0, 4, endpoint=False),
+            threshold_gamma=np.linspace(1, 0, 5),
             add_title=add_title,
         )
         print("Done.")
@@ -2194,12 +2197,12 @@ def main() -> None:
         print("Plotting energy over truncation threshold and Trotter steps...")
         vha_plots.plot_energy_over_truncation_threshold_and_trotter_steps(
             list_of_trotter_steps=list_of_trotter_steps,
-            thresholds_gamma=thresholds_gamma,
+            list_of_threshold_gamma=thresholds_gamma,
             add_title=add_title,
         )
         vha_plots.plot_energy_over_truncation_threshold(
             trotter_steps=list_of_trotter_steps,
-            thresholds_gamma=thresholds_gamma,
+            list_of_threshold_gamma=thresholds_gamma,
             add_title=add_title,
         )
         print("Done.")
