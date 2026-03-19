@@ -1053,23 +1053,23 @@ class VHAPlots:
         self,
         trotter_steps: int | Sequence[int] = 1,
         list_of_threshold_gamma: Sequence[float] | None = None,
-        add_title: bool = True,
         max_evals: int | Sequence[int] = 1000,
+        add_title: bool = True,
     ) -> None:
         """Plots energy of tVHA depending on the truncation threshold.
 
         Args:
-            trotter_steps: the number of Trotter steps to use.
+            trotter_steps: The number of Trotter steps to use.
                 If given as single element, only a single line is plotted.
                 If given as list, all list elements are used in sorted order
                 creating a line for each number of Trotter steps.
-            list_of_threshold_gamma: the truncation thresholds to use for this plot.
+            list_of_threshold_gamma: The truncation thresholds to use for this plot.
                 If 'None', all possible truncation thresholds are used.
-            add_title: whether to add a title to the plot.
             max_evals: Maximum number of function evaluations of the optimization algorithm (SBPLX).
                 If a single value, it will be used for all trotter_steps.
                 If given as a list, the first value will be used for the first element of the
                 trotter_steps list, the second for the second etc.
+            add_title: Whether to add a title to the plot.
         """
         list_of_trotter_steps = (
             list(trotter_steps) if isinstance(trotter_steps, Iterable) else [trotter_steps]
@@ -1244,20 +1244,19 @@ class VHAPlots:
         self,
         list_of_trotter_steps: Sequence[int] = (1, 2, 3, 4, 5),
         threshold_gamma: float | Sequence[float] = 1.0,
-        add_title: bool = True,
         max_evals: int | Sequence[int] = 1000,
+        add_title: bool = True,
     ) -> None:
         """Plots the energy of tVHA depending on the number of Trotter steps.
 
         Args:
-            list_of_trotter_steps: the numbers of Trotter steps to use.
-            threshold_gamma: the truncation threshold to use for this plot.
+            list_of_trotter_steps: The numbers of Trotter steps to use.
+            threshold_gamma: The truncation threshold to use for this plot.
                 If given as single element, only a single line is plotted.
                 If given as list, all list elements are used in sorted order
                 creating a line for each truncation threshold.
-            add_title: whether to add a title to the plot.
             max_evals: Maximum number of function evaluations of the optimization algorithm (SBPLX).
-
+            add_title: Whether to add a title to the plot.
         """
         list_of_max_evals = (
             list(max_evals)
@@ -1421,17 +1420,17 @@ class VHAPlots:
         self,
         list_of_trotter_steps: Sequence[int] = (1, 2, 3, 4, 5),
         list_of_threshold_gamma: Sequence[float] | None = None,
-        add_title: bool = True,
         max_evals: int | Sequence[int] = 1000,
+        add_title: bool = True,
     ) -> None:
         """Plots energy of tVHA depending on truncation threshold and Trotter steps as heatmap.
 
         Args:
-            list_of_trotter_steps: the numbers of Trotter steps to use.
-            list_of_threshold_gamma: the truncation thresholds to use for this plot.
+            list_of_trotter_steps: The numbers of Trotter steps to use.
+            list_of_threshold_gamma: The truncation thresholds to use for this plot.
                 If 'None', all possible truncation thresholds are used.
-            add_title: whether to add a title to the plot.
             max_evals: Maximum number of function evaluations of the optimization algorithm (SBPLX).
+            add_title: Whether to add a title to the plot.
         """
         if isinstance(max_evals, Iterable):
             list_of_max_evals = list(max_evals)
