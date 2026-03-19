@@ -95,7 +95,7 @@ class VHAPlots:
         mapper: FermionicMapper | None,
     ) -> None:
         """Initializes all needed variables for plotting of properties of tVHA."""
-        self._epsilon = 1e-13  # tolerance for floats to be considered equal
+        self._epsilon = 1e-11  # tolerance for floats to be considered equal
         output_path.mkdir(exist_ok=True)
         self.output_path = output_path.resolve()
         self.file_energies = self.output_path.joinpath(f"energies_simulator_{molecule_name}.csv")
@@ -192,10 +192,25 @@ class VHAPlots:
             tuple(energy_data_header, energy_data)
         """
         try:
-            return pd.read_csv(
+            energy_data = pd.read_csv(
                 self.file_energies,
                 converters={"optimal_parameters": literal_eval},
                 index_col=0,
+            )
+            energy_data["threshold_gamma"] = energy_data["threshold_gamma"].apply(
+                lambda x: round(x, 12)
+            )
+            energy_data["cx_error_prob"] = energy_data["cx_error_prob"].apply(
+                lambda x: round(x, 12)
+            )
+            return energy_data.drop_duplicates(
+                subset=[
+                    "ansatz_name",
+                    "trotter_steps",
+                    "threshold_gamma",
+                    "max_evals",
+                    "cx_error_prob",
+                ]
             )
         except FileNotFoundError:
             logger.info(
@@ -448,7 +463,9 @@ class VHAPlots:
             list_of_threshold_gamma = [None]
         list_of_max_evals = list(max_evals) if isinstance(max_evals, Iterable) else [max_evals]
         list_of_cx_error_prob = (
-            list(cx_error_prob) if isinstance(cx_error_prob, Iterable) else [cx_error_prob]
+            [round(err, 12) for err in cx_error_prob]
+            if isinstance(cx_error_prob, Iterable)
+            else [round(cx_error_prob, 12)]
         )
         self._calculate_missing_energies(
             ansatz_name=ansatz_name,

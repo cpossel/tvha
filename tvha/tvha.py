@@ -88,7 +88,7 @@ class VariationalHamiltonianAnsatz(BlueprintCircuit):
             insert_barriers: Whether to insert barriers between different building blocks.
                 Solely for visualization purposes.
         """
-        self._epsilon = 1e-13  # tolerance for floats to be considered equal
+        self._epsilon = 1e-11  # tolerance for floats to be considered equal
         self.problem = problem
         if isinstance(mapper, ParityMapper):
             raise ValueError("ParityMapper is not supported yet.")
@@ -337,7 +337,7 @@ class VariationalHamiltonianAnsatz(BlueprintCircuit):
             raise ValueError(
                 "The truncation threshold must be between zero and one. Check the code for bugs."
             )
-        return tuple(possible_thresholds_gamma.tolist())
+        return tuple(round(threshold, 12) for threshold in possible_thresholds_gamma)
 
     def get_threshold_gamma(self, initial_threshold_gamma: float) -> tuple[int, float]:
         """Gets the final truncation threshold for the tVHA ansatz and its index/ordinal number.
