@@ -2215,11 +2215,17 @@ def main() -> None:
         vha_plots.plot_energy_over_truncation_threshold_and_trotter_steps(
             list_of_trotter_steps=list_of_trotter_steps,
             list_of_threshold_gamma=thresholds_gamma,
+            max_evals=1000
+            if molecule_name in ("CH_2", "H_2")
+            else [trotter_steps * 1000 for trotter_steps in list_of_trotter_steps],
             add_title=add_title,
         )
         vha_plots.plot_energy_over_truncation_threshold(
             trotter_steps=list_of_trotter_steps,
             list_of_threshold_gamma=thresholds_gamma,
+            max_evals=1000
+            if molecule_name in ("CH_2", "H_2")
+            else [trotter_steps * 1000 for trotter_steps in list_of_trotter_steps],
             add_title=add_title,
         )
         print("Done.")
