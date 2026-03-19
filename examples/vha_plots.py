@@ -1752,6 +1752,141 @@ class VHAPlots:
         plt.show()
         plt.close()
 
+    def plot_energy_over_noise(
+        self,
+        list_of_cx_error_prob: Sequence[float],
+        trotter_steps: int | Sequence[int] = 1,
+        threshold_gamma: float | Sequence[float] = 1.0,
+        max_evals: int = 1000,
+        add_title: bool = True,
+    ) -> None:
+        """Plots the energy of tVHA depending on the CX error probability.
+
+        Args:
+            list_of_cx_error_prob: The CX error probabilities to use for the noise model.
+            trotter_steps: The numbers of Trotter steps to use.
+                If given as single element, only a single line is plotted.
+                If given as list, all list elements are used in sorted order
+                creating a line for each number of Trotter steps.
+            threshold_gamma: The truncation threshold to use for this plot.
+                If given as single element, only a single line is plotted.
+                If given as list, all list elements are used in sorted order
+                creating a line for each truncation threshold.
+            max_evals: Maximum number of function evaluations of the optimization algorithm (SBPLX).
+            add_title: whether to add a title to the plot.
+        """
+        # TODO: add docstring
+        list_of_trotter_steps = (
+            list(trotter_steps) if isinstance(trotter_steps, Iterable) else [trotter_steps]
+        )
+        list_of_threshold_gamma = self._get_final_thresholds_gamma(thresholds_gamma=threshold_gamma)
+
+        energy_results = {}
+
+        # HEA & UCCSD & UCCSDT
+        colors = {"HEA": color_hea, "UCCSD": colors_ucc[0], "UCCSDT": colors_ucc[1]}
+        for ansatz_name in ("HEA", "UCCSD", "UCCSDT"):
+            energy_results[ansatz_name] = self.get_energy_data(
+                ansatz_name=ansatz_name,
+                trotter_steps=None,
+                threshold_gamma=None,
+                max_evals=max_evals,
+                cx_error_prob=list_of_cx_error_prob,
+            ).sort_values(by="cx_error_prob")["energy"]
+
+        # tVHA
+        energy_data = self.get_energy_data(
+            trotter_steps=list_of_trotter_steps,
+            threshold_gamma=list_of_threshold_gamma,
+            max_evals=max_evals,
+            cx_error_prob=list_of_cx_error_prob,
+        )
+        i = 0
+        for trotter_steps in list_of_trotter_steps:
+            for threshold_gamma in list_of_threshold_gamma:
+                ansatz_name = f"tVHA γ={threshold_gamma:.3g} ({trotter_steps} Trotter steps)"
+                mask = (
+                    (energy_data["trotter_steps"] == trotter_steps)
+                    & np.isclose(
+                        energy_data["threshold_gamma"],
+                        threshold_gamma,
+                        rtol=self._epsilon,
+                        atol=self._epsilon,
+                    )
+                    # & (energy_data["max_evals"] == max_evals)
+                )
+                energy_results[ansatz_name] = energy_data[mask].sort_values(by="cx_error_prob")[
+                    "energy"
+                ]
+                colors[ansatz_name] = colors_tvha[i]
+                i += 1
+
+        for ansatz_name, energies in energy_results.items():
+            plt.plot(
+                list_of_cx_error_prob,
+                energies,
+                label=ansatz_name,
+                color=colors[ansatz_name],
+            )
+        plt.xscale("log")
+        xmin, xmax = plt.xlim()
+
+        energy_hf = (
+            self.problem.reference_energy
+            - self.numerical_energies["nuclear_repulsion_energy"]
+            - self.numerical_energies["inactive_space_energy"]
+        )
+        # HF energy
+        plt.hlines(
+            energy_hf,
+            xmin=xmin,
+            xmax=xmax,
+            label="HF",
+            color=color_hf,
+            linestyles="solid",
+            zorder=0,
+        )
+
+        # FCI energy
+        numerical_energy = self.get_numerical_energy()["computed_energy"]
+        plt.hlines(
+            numerical_energy,
+            xmin=xmin,
+            xmax=xmax,
+            label="FCI",
+            color=color_fci,
+            linestyles="solid",
+            zorder=0,
+        )
+        plt.fill_between(
+            (xmin, xmax),
+            numerical_energy,
+            numerical_energy + 0.0015,
+            label="chemical accuracy",
+            color=color_fci,
+            alpha=0.4,
+            zorder=0,
+        )
+
+        plt.xlim(xmin, xmax)
+        plt.legend()
+        # TODO: make plot more beautiful (also using FhG colors)
+        # TODO: save intermediate results to file (important for paper to upload not only the script but also the raw data of the plots)
+        # TODO: add plot to tVHA paper (and repo with new version number)
+
+        if add_title:
+            plt.title(
+                "Energy for different noise levels for tVHA, UCC and HEA " + self.molecule_name
+            )
+
+        plt.show()
+
+        # filename = "energy_over_noise_"
+        # filename += "_".join(error_probabilities)
+        # filename += self.molecule_name + ".svg"
+        # plt.savefig(self.output_path.joinpath(filename), format="svg")
+        # plt.close()
+
 
 def plot_parameter_count(
     output_path: Path,
@@ -2078,6 +2213,7 @@ def main() -> None:
     plot_energy_over_truncation_threshold = False
     plot_energy_over_trotter_steps = False
     plot_energy_over_truncation_threshold_and_trotter_steps = True
+    plot_energy_over_noise_flag = True
 
     plot_parameter_count_over_ansatz = False
 
@@ -2225,6 +2361,17 @@ def main() -> None:
             max_evals=1000
             if molecule_name in ("CH_2", "H_2")
             else [trotter_steps * 1000 for trotter_steps in list_of_trotter_steps],
+            add_title=add_title,
+        )
+        print("Done.")
+
+    if plot_energy_over_noise_flag:
+        print("Plotting energy over noise...")
+        vha_plots.plot_energy_over_noise(
+            list_of_cx_error_prob=(0.0, 1e-5, 1e-4, 1e-3, 1e-2),
+            trotter_steps=(1, 2, 5),
+            threshold_gamma=(0.2, 0.5, 0.9, 1),
+            max_evals=10000,
             add_title=add_title,
         )
         print("Done.")
