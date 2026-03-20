@@ -1826,6 +1826,12 @@ class VHAPlots:
                 list_of_cx_error_prob,
                 energies,
                 label=ansatz_name,
+                marker="x",
+                linestyle="dotted"
+                if "tVHA" in ansatz_name
+                else "dashed"
+                if ansatz_name == "HEA"
+                else "dashdot",
                 color=colors[ansatz_name],
             )
         plt.xscale("log")
@@ -1879,13 +1885,11 @@ class VHAPlots:
                 "Energy for different noise levels for tVHA, UCC and HEA " + self.molecule_name
             )
 
-        plt.show()
-
-        # filename = "energy_over_noise_"
-        # filename += "_".join(error_probabilities)
-        # filename += self.molecule_name + ".svg"
-        # plt.savefig(self.output_path.joinpath(filename), format="svg")
-        # plt.close()
+        filename = "energy_over_noise_"
+        filename += "_".join(list_of_cx_error_prob)
+        filename += "_" + self.molecule_name + ".svg"
+        plt.savefig(self.output_path.joinpath(filename), format="svg")
+        plt.close()
 
 
 def plot_parameter_count(
