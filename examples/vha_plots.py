@@ -241,10 +241,10 @@ class VHAPlots:
     def _calculate_missing_energies(
         self,
         ansatz_name: Literal["tVHA", "UCCSD", "UCCSDT", "HEA"] = "tVHA",
-        list_of_trotter_steps: Sequence[int] = (1),
-        list_of_threshold_gamma: Sequence[float] | None = (1.0),
-        list_of_max_evals: Sequence[int] = (1000),
-        list_of_cx_error_prob: Sequence[float] = (0.0),
+        list_of_trotter_steps: Sequence[int] = (1,),
+        list_of_threshold_gamma: Sequence[float] | None = (1.0,),
+        list_of_max_evals: Sequence[int] = (1000,),
+        list_of_cx_error_prob: Sequence[float] = (0.0,),
     ) -> None:
         """Calculates the energy for the given arguments.
 
@@ -383,10 +383,10 @@ class VHAPlots:
     def _get_energy_data(
         self,
         ansatz_name: Literal["tVHA", "UCCSD", "UCCSDT", "HEA"] = "tVHA",
-        list_of_trotter_steps: Sequence[int] = (1),
-        list_of_threshold_gamma: Sequence[float] | None = (1.0),
-        list_of_max_evals: Sequence[int] = (1000),
-        list_of_cx_error_prob: Sequence[float] = (0.0),
+        list_of_trotter_steps: Sequence[int] = (1,),
+        list_of_threshold_gamma: Sequence[float] | None = (1.0,),
+        list_of_max_evals: Sequence[int] = (1000,),
+        list_of_cx_error_prob: Sequence[float] = (0.0,),
     ) -> pd.DataFrame:
         """Gets the energy data from self._energy_data without calculating any missing datapoints."""
         if self._energy_data.empty:
