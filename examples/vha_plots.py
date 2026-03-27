@@ -1818,7 +1818,7 @@ class VHAPlots:
                 energy_results[ansatz_name] = energy_data[mask].sort_values(by="cx_error_prob")[
                     "energy"
                 ]
-                colors[ansatz_name] = colors_tvha[i]
+                colors[ansatz_name] = colors_tvha[i % len(colors_tvha)]
                 i += 1
 
         for ansatz_name, energies in energy_results.items():
@@ -1875,9 +1875,11 @@ class VHAPlots:
         )
 
         plt.xlim(xmin, xmax)
+        plt.ylim(
+            numerical_energy - (energy_hf - numerical_energy) * 0.05,
+            energy_hf + (energy_hf - numerical_energy) * 0.05,
+        )
         plt.legend()
-        # TODO: make plot more beautiful (also using FhG colors)
-        # TODO: save intermediate results to file (important for paper to upload not only the script but also the raw data of the plots)
         # TODO: add plot to tVHA paper (and repo with new version number)
 
         if add_title:
@@ -1886,7 +1888,7 @@ class VHAPlots:
             )
 
         filename = "energy_over_noise_"
-        filename += "_".join(list_of_cx_error_prob)
+        filename += "_".join(f"{cx_error_prob:.4g}" for cx_error_prob in list_of_cx_error_prob)
         filename += "_" + self.molecule_name + ".svg"
         plt.savefig(self.output_path.joinpath(filename), format="svg")
         plt.close()
@@ -2280,11 +2282,9 @@ def main() -> None:
     # unless stated explicitly to be the total energy.
 
     if logger.getEffectiveLevel() <= logging.DEBUG:
-        datapoint = vha_plots._get_energy(
-            trotter_steps=1, thresholds_gamma=1.0, return_full_datapoint=True
-        )
-        energy_statevector = datapoint[vha_plots.energy_data_header.index("energy")]
-        optimal_parameters = datapoint[vha_plots.energy_data_header.index("optimal_parameters")]
+        datapoint = vha_plots.get_energy_data(trotter_steps=1, thresholds_gamma=1.0)
+        energy_statevector = datapoint["energy"].iloc[0]
+        optimal_parameters = datapoint["optimal_parameters"].iloc[0]
         if len(optimal_parameters) == 3:
             optimal_parameters_string = (
                 f"α={optimal_parameters[0]:.5g}, "  # noqa: RUF001
@@ -2372,10 +2372,14 @@ def main() -> None:
     if plot_energy_over_noise_flag:
         print("Plotting energy over noise...")
         vha_plots.plot_energy_over_noise(
-            list_of_cx_error_prob=(0.0, 1e-5, 1e-4, 1e-3, 1e-2),
+            list_of_cx_error_prob=(0.0, 1e-5, 1e-4, 1e-3)
+            if molecule_name == "LiH"
+            else (0.0, 1e-6, 2e-6, 5e-6, 1e-5, 2e-5, 5e-5, 1e-4, 2e-4, 5e-4, 1e-3)
+            if molecule_name == "H_2"
+            else (0.0, 1e-5, 2e-5, 5e-5, 1e-4, 2e-4, 5e-4, 1e-3),
             trotter_steps=(1, 2, 5),
             threshold_gamma=(0.2, 0.5, 0.9, 1),
-            max_evals=10000,
+            max_evals=5000 if molecule_name in ("H_4", "LiH") else 10000,
             add_title=add_title,
         )
         print("Done.")
