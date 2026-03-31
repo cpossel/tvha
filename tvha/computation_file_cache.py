@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 from filelock import FileLock
 from tqdm import tqdm
@@ -67,7 +68,7 @@ class ComputationFileCache(ABC):
         # round all floats consistently
         df.update(df.select_dtypes(include=[float]).round(12))
 
-        return df.drop_duplicates(subset=list(self._default_param_dict))
+        return df.drop_duplicates(subset=list(self._default_param_dict)).replace({None: np.nan})
 
     def _flush_row_to_csv_file(self, df_row: pd.DataFrame) -> None:
         """Append a single row DataFrame to the CSV file.
@@ -123,7 +124,10 @@ class ComputationFileCache(ABC):
                 values = list(value)
 
             # Round floats
-            rounded = [round(v, 12) if isinstance(v, float) else v for v in values]
+            rounded = [
+                round(v, 12) if isinstance(v, float) else (np.nan if v is None else v)
+                for v in values
+            ]
 
             params[key] = rounded
 
@@ -137,7 +141,7 @@ class ComputationFileCache(ABC):
             if param.default is not param.empty:  # has default
                 defaults[name] = param.default
             else:
-                defaults[name] = None
+                defaults[name] = np.nan
         return defaults
 
     def _filter_cached(self, params: dict[str, list]) -> pd.DataFrame:
@@ -167,7 +171,9 @@ class ComputationFileCache(ABC):
         if self.data.empty:
             return df.to_dict(orient="records")
 
-        merged = df.merge(self.data[param_cols], on=param_cols, how="left", indicator=True)
+        merged = df.replace({None: np.nan}).merge(
+            self.data[param_cols], on=param_cols, how="left", indicator=True
+        )
 
         missing_df = merged[merged["_merge"] == "left_only"].drop(columns=["_merge"])
         return missing_df.to_dict(orient="records")
@@ -262,13 +268,12 @@ class ComputationFileCache(ABC):
         params = self._parse_param_values(kwargs)
 
         if datapoints:
-            datapoints_with_defaults = [
-                {
-                    param_name: datapoint.get(param_name, self._default_param_dict[param_name])
-                    for param_name in self._default_param_dict
-                }
-                for datapoint in datapoints
-            ]
+            datapoints_with_defaults = []
+            for datapoint in datapoints:
+                for param_name in self._default_param_dict:
+                    value = datapoint.get(param_name, self._default_param_dict[param_name])
+                    datapoint[param_name] = np.nan if value is None else value
+                datapoints_with_defaults.append(datapoint)
         else:
             datapoints_with_defaults = None
 
