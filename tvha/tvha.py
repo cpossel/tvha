@@ -96,11 +96,7 @@ class VariationalHamiltonianAnsatz(BlueprintCircuit):
         self.trotterization_order = trotterization_order
         self._electronic_energy = self.problem.hamiltonian
 
-        if not isinstance(trotter_steps, int) or trotter_steps < 1:
-            raise ValueError(
-                f"Invalid number of layers: {trotter_steps}. Specify a positive integer."
-            )
-        self.trotter_steps = trotter_steps
+        self.trotter_steps = int(trotter_steps)
 
         self.hamilton_operator = self.get_hamilton_operator()
         self.fock_operator = self.get_fock_operator()
