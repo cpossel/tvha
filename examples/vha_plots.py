@@ -918,10 +918,10 @@ class VHAPlots(ComputationFileCache):
                 list_of_threshold_gamma,
                 energies,
                 label=label,
-                marker="x",
+                marker=["d", "o", "X", "+", "x"][idx % len(list_of_trotter_steps)],
                 linestyle="dotted",
                 linewidth=0.8,
-                color=colors_tvha[idx],
+                color=colors_tvha[idx % len(list_of_trotter_steps)],
             )
         xmin, xmax = plt.xlim()
 
@@ -1102,10 +1102,10 @@ class VHAPlots(ComputationFileCache):
                 list_of_trotter_steps,
                 energies,
                 label=f"tVHA (truncation threshold {threshold_gamma:.4g})",
-                marker="x",
+                marker=["d", "o", "X", "+", "x"][idx % len(list_of_threshold_gamma)],
                 linestyle="dotted",
                 linewidth=0.8,
-                color=colors_tvha[idx],
+                color=colors_tvha[idx % len(list_of_threshold_gamma)],
             )
 
         xmin, xmax = plt.xlim()
@@ -1617,29 +1617,22 @@ class VHAPlots(ComputationFileCache):
         energy_data = self.get_datapoints(datapoints=datapoints)
 
         # tVHA
-        energies_tvha = {}
-        i = 0
-        for trotter_steps in list_of_trotter_steps:
-            for threshold_gamma in list_of_threshold_gamma:
-                tvha_specs_name = f"tVHA γ={threshold_gamma:.3g} ({trotter_steps} Trotter steps)"  # noqa: RUF001
-                energies_tvha[tvha_specs_name] = energy_data[
+        for id_trotter, trotter_steps in enumerate(list_of_trotter_steps):
+            for id_gamma, threshold_gamma in enumerate(list_of_threshold_gamma):
+                energies = energy_data[
                     (energy_data["ansatz_name"] == "tVHA")
                     & (energy_data["trotter_steps"] == trotter_steps)
                     & (energy_data["threshold_gamma"] == threshold_gamma)
                     & (energy_data["max_evals"] == max_evals)
                 ].sort_values(by="cx_error_prob")["energy"]
-
-        for i, (tvha_specs_name, energy_tvha) in enumerate(energies_tvha.items()):
-            plt.plot(
-                list_of_cx_error_prob,
-                energy_tvha,
-                label=tvha_specs_name,
-                marker="x",
-                linestyle="dotted",
-                color=color_circle[i % len(color_circle)],
-            )
-        plt.xscale("log")
-        xmin, xmax = plt.xlim()
+                plt.plot(
+                    list_of_cx_error_prob,
+                    energies,
+                    label=f"tVHA γ={threshold_gamma:.3g} ({trotter_steps} Trotter steps)",  # noqa: RUF001
+                    marker=["d", "o", "X", "+", "x"][id_trotter % len(list_of_trotter_steps)],
+                    linestyle="dotted",
+                    color=color_circle[id_gamma % len(list_of_threshold_gamma)],
+                )
 
         energy_hf = (
             self.problem.reference_energy
@@ -1690,6 +1683,14 @@ class VHAPlots(ComputationFileCache):
             color=color_hea,
         )
 
+        numerical_energy = self.get_numerical_energy()["computed_energy"]
+        plt.ylim(
+            numerical_energy - (energy_hf - numerical_energy) * 0.05,
+            energy_hf + (energy_hf - numerical_energy) * 0.05,
+        )
+        plt.xscale("log")
+        xmin, xmax = plt.xlim()
+
         # HF energy
         plt.hlines(
             energy_hf,
@@ -1702,7 +1703,6 @@ class VHAPlots(ComputationFileCache):
         )
 
         # FCI energy
-        numerical_energy = self.get_numerical_energy()["computed_energy"]
         plt.hlines(
             numerical_energy,
             xmin=xmin,
@@ -1723,21 +1723,18 @@ class VHAPlots(ComputationFileCache):
         )
 
         plt.xlim(xmin, xmax)
-        plt.ylim(
-            numerical_energy - (energy_hf - numerical_energy) * 0.05,
-            energy_hf + (energy_hf - numerical_energy) * 0.05,
-        )
-        plt.legend()
-        # TODO: add plot to tVHA paper (and repo with new version number)
 
+        plt.legend()
+        plt.xlabel("CNOT depolarization error probability")
+        plt.ylabel("Energy in Hartree")
         if add_title:
             plt.title(
                 "Energy for different noise levels for tVHA, UCC and HEA " + self.molecule_name
             )
 
-        filename = "energy_over_noise_"
+        filename = f"{self.molecule_name}_energy_over_noise_"
         filename += "_".join(f"{cx_error_prob:.4g}" for cx_error_prob in list_of_cx_error_prob)
-        filename += "_" + self.molecule_name + ".svg"
+        filename += ".svg"
         plt.savefig(self.output_path.joinpath(filename), format="svg")
         plt.close()
 
@@ -2218,18 +2215,70 @@ def main() -> None:
         print("Done.")
 
     if plot_energy_over_noise_flag:
+        options = {
+            "H_2": {
+                "list_of_cx_error_prob": (
+                    0,
+                    1e-6,
+                    2e-6,
+                    5e-6,
+                    1e-5,
+                    2e-5,
+                    5e-5,
+                    1e-4,
+                    2e-4,
+                    5e-4,
+                    1e-3,
+                ),
+                "trotter_steps": (1, 2, 5),
+                "threshold_gamma": (0.5, 1),
+                "max_evals": 10000,
+            },
+            "H_4": {
+                "list_of_cx_error_prob": (
+                    0,
+                    1e-6,
+                    2e-6,
+                    5e-6,
+                    1e-5,
+                    2e-5,
+                    5e-5,
+                    1e-4,
+                    2e-4,
+                    5e-4,
+                    1e-3,
+                ),
+                "trotter_steps": (1, 2, 5),
+                "threshold_gamma": (0.2, 0.5, 0.9, 1),
+                "max_evals": 5000,
+            },
+            "CH_2": {
+                "list_of_cx_error_prob": (
+                    0,
+                    1e-6,
+                    2e-6,
+                    5e-6,
+                    1e-5,
+                    2e-5,
+                    5e-5,
+                    1e-4,
+                    2e-4,
+                    5e-4,
+                    1e-3,
+                ),
+                "trotter_steps": (1, 2, 5),
+                "threshold_gamma": (0.2, 0.5, 0.9, 1),
+                "max_evals": 10000,
+            },
+            "LiH": {
+                "list_of_cx_error_prob": (0, 1e-5, 1e-4, 1e-3),
+                "trotter_steps": (1, 2),
+                "threshold_gamma": (0.2, 0.5, 0.9, 1),
+                "max_evals": 1000,
+            },
+        }
         print("Plotting energy over noise...")
-        vha_plots.plot_energy_over_noise(
-            list_of_cx_error_prob=(0.0, 1e-5, 1e-4, 1e-3)
-            if molecule_name == "LiH"
-            else (0.0, 1e-6, 2e-6, 5e-6, 1e-5, 2e-5, 5e-5, 1e-4, 2e-4, 5e-4, 1e-3)
-            if molecule_name == "H_2"
-            else (0.0, 1e-5, 2e-5, 5e-5, 1e-4, 2e-4, 5e-4, 1e-3),
-            trotter_steps=(1, 2, 5),
-            threshold_gamma=(0.2, 0.5, 0.9, 1),
-            max_evals=5000 if molecule_name in ("H_4", "LiH") else 10000,
-            add_title=add_title,
-        )
+        vha_plots.plot_energy_over_noise(add_title=add_title, **options[molecule_name])
         print("Done.")
 
     if plot_parameter_count_over_ansatz:
