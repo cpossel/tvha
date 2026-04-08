@@ -219,7 +219,8 @@ class ComputationFileCache(ABC):
             )
             df_row.update(df_row.select_dtypes(include=[float]).round(12))
 
-            with FileLock(str(self.output_file) + ".lock"):
+            lock = FileLock(str(self.output_file) + ".lock")
+            with lock:
                 self._flush_row_to_csv_file(df_row)
 
             new_rows.append(df_row)
