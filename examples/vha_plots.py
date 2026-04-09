@@ -1569,6 +1569,7 @@ class VHAPlots(ComputationFileCache):
         threshold_gamma: float | Sequence[float] = 1.0,
         max_evals: int = 1000,
         add_title: bool = True,
+        skip_uccsdt: bool = False,
     ) -> None:
         """Plots the energy of tVHA depending on the CX error probability.
 
@@ -1584,6 +1585,8 @@ class VHAPlots(ComputationFileCache):
                 creating a line for each truncation threshold.
             max_evals: Maximum number of function evaluations of the optimization algorithm (SBPLX).
             add_title: whether to add a title to the plot.
+            skip_uccsdt: whether to skip calculation of UCCSDT (useful for larger systems
+                as it might take lots of time).
         """
         list_of_trotter_steps = (
             list(trotter_steps) if isinstance(trotter_steps, Iterable) else [trotter_steps]
@@ -1605,7 +1608,7 @@ class VHAPlots(ComputationFileCache):
                         }
                     )
         for cx_error_prob in list_of_cx_error_prob:
-            for ansatz_name in ("HEA", "UCCSD", "UCCSDT"):
+            for ansatz_name in ("HEA", "UCCSD") if skip_uccsdt else ("HEA", "UCCSD", "UCCSDT"):
                 datapoints.append(
                     {
                         "ansatz_name": ansatz_name,
@@ -1644,23 +1647,25 @@ class VHAPlots(ComputationFileCache):
         energies_uccsd = energy_data[
             (energy_data["ansatz_name"] == "UCCSD") & (energy_data["max_evals"] == max_evals)
         ].sort_values(by="cx_error_prob")["energy"]
-        energies_uccsdt = energy_data[
-            (energy_data["ansatz_name"] == "UCCSDT") & (energy_data["max_evals"] == max_evals)
-        ].sort_values(by="cx_error_prob")["energy"]
+        if not skip_uccsdt:
+            energies_uccsdt = energy_data[
+                (energy_data["ansatz_name"] == "UCCSDT") & (energy_data["max_evals"] == max_evals)
+            ].sort_values(by="cx_error_prob")["energy"]
 
         # UCCSD
-        uccsd_equals_uccsdt = bool(np.all(np.isclose(energies_uccsd, energies_uccsdt)))
+        if not skip_uccsdt:
+            uccsd_equals_uccsdt = bool(np.all(np.isclose(energies_uccsd, energies_uccsdt)))
         plt.plot(
             list_of_cx_error_prob,
             energies_uccsd,
-            label="UCCSD / UCCSDT" if uccsd_equals_uccsdt else "UCCSD",
+            label="UCCSD" if skip_uccsdt or not uccsd_equals_uccsdt else "UCCSD / UCCSDT",
             marker="x",
             linestyle="dashdot",
             color=colors_ucc[0],
         )
 
         # UCCSDT
-        if not uccsd_equals_uccsdt:
+        if not skip_uccsdt and not uccsd_equals_uccsdt:
             plt.plot(
                 list_of_cx_error_prob,
                 energies_uccsdt,
@@ -2272,9 +2277,10 @@ def main() -> None:
             },
             "LiH": {
                 "list_of_cx_error_prob": (0, 1e-5, 1e-4, 1e-3),
-                "trotter_steps": (1, 2),
-                "threshold_gamma": (0.2, 0.5, 0.9, 1),
+                "trotter_steps": (1,),
+                "threshold_gamma": (0.5, 0.9),
                 "max_evals": 1000,
+                "skip_uccsdt": True,
             },
         }
         print("Plotting energy over noise...")
