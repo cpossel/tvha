@@ -98,8 +98,9 @@ class VHAPlots(ComputationFileCache):
         self._epsilon = 1e-11  # tolerance for floats to be considered equal
         output_path.mkdir(exist_ok=True)
         self.output_path = output_path.resolve()
-        self.file_energies = self.output_path.joinpath(f"energies_simulator_{molecule_name}.csv")
-        super().__init__(output_file=self.file_energies)
+        super().__init__(
+            output_file=Path(self.output_path).joinpath(f"energies_simulator_{molecule_name}.csv")
+        )
         self.molecule_name = molecule_name
         self.problem = problem
         self.mapper = mapper or JordanWignerMapper()
@@ -1007,7 +1008,7 @@ class VHAPlots(ComputationFileCache):
 
         # FCI energy
         plt.hlines(
-            self.numerical_energies["computed_energy"],
+            energy_fci,
             xmin=xmin,
             xmax=xmax,
             label=" / ".join(labels_close_to_fci),
@@ -1017,8 +1018,8 @@ class VHAPlots(ComputationFileCache):
         )
         plt.fill_between(
             (xmin, xmax),
-            self.numerical_energies["computed_energy"],
-            self.numerical_energies["computed_energy"] + 0.0015,
+            energy_fci,
+            energy_fci + 0.0015,
             label="chemical accuracy",
             color=color_fci,
             alpha=0.4,
@@ -1190,7 +1191,7 @@ class VHAPlots(ComputationFileCache):
 
         # FCI energy
         plt.hlines(
-            self.numerical_energies["computed_energy"],
+            energy_fci,
             xmin=xmin,
             xmax=xmax,
             label=" / ".join(labels_close_to_fci),
@@ -1200,8 +1201,8 @@ class VHAPlots(ComputationFileCache):
         )
         plt.fill_between(
             (xmin, xmax),
-            self.numerical_energies["computed_energy"],
-            self.numerical_energies["computed_energy"] + 0.0015,
+            energy_fci,
+            energy_fci + 0.0015,
             label="Chemical accuracy",
             color=color_fci,
             alpha=0.4,
@@ -1688,10 +1689,11 @@ class VHAPlots(ComputationFileCache):
             color=color_hea,
         )
 
-        numerical_energy = self.get_numerical_energy()["computed_energy"]
+        energy_fci = self.numerical_energies["computed_energy"]
+
         plt.ylim(
-            numerical_energy - (energy_hf - numerical_energy) * 0.05,
-            energy_hf + (energy_hf - numerical_energy) * 0.05,
+            energy_fci - (energy_hf - energy_fci) * 0.05,
+            energy_hf + (energy_hf - energy_fci) * 0.05,
         )
         plt.xscale("log")
         xmin, xmax = plt.xlim()
@@ -1709,7 +1711,7 @@ class VHAPlots(ComputationFileCache):
 
         # FCI energy
         plt.hlines(
-            numerical_energy,
+            energy_fci,
             xmin=xmin,
             xmax=xmax,
             label="FCI",
@@ -1719,8 +1721,8 @@ class VHAPlots(ComputationFileCache):
         )
         plt.fill_between(
             (xmin, xmax),
-            numerical_energy,
-            numerical_energy + 0.0015,
+            energy_fci,
+            energy_fci + 0.0015,
             label="chemical accuracy",
             color=color_fci,
             alpha=0.4,
