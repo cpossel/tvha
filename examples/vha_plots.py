@@ -2591,6 +2591,7 @@ def main() -> None:
         print("Plotting error estimate over truncation threshold...")
         vha_plots.plot_error_estimate_over_truncation_threshold(
             trotter_steps=1 if molecule_name in ("H_2", "CH_2") else (1, 5),
+            max_evals=1000 if molecule_name in ("H_2", "CH_2") else (1000, 5000),
             list_of_threshold_gamma=np.linspace(0, 1, 65) if molecule_name == "LiH" else None,
             add_title=add_title,
         )
