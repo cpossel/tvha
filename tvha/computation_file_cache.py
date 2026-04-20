@@ -65,10 +65,11 @@ class ComputationFileCache(ABC):
                 f"Please add them manually into file {self.output_file} before resuming."
             )
 
-        # round all floats consistently
-        df.update(df.select_dtypes(include=[float]).round(12))
-
-        return df.drop_duplicates(subset=list(self._default_param_dict)).replace({None: np.nan})
+        # index resetting needs to be called twice:
+        # before df.update and after df.drop_duplicates
+        df = df.reset_index(drop=True).replace({None: np.nan})
+        df = df.assign(**df.select_dtypes(float).round(12))
+        return df.drop_duplicates(subset=list(self._default_param_dict)).reset_index(drop=True)
 
     def _flush_row_to_csv_file(self, df_row: pd.DataFrame) -> None:
         """Append a single row DataFrame to the CSV file.
