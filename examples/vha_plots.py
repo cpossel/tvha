@@ -2071,7 +2071,7 @@ def main() -> None:
     plot_energy_over_truncation_threshold = False
     plot_energy_over_trotter_steps = False
     plot_energy_over_truncation_threshold_and_trotter_steps = True
-    plot_energy_over_noise_flag = True
+    plot_energy_over_noise = True
 
     plot_parameter_count_over_ansatz = False
 
@@ -2221,7 +2221,7 @@ def main() -> None:
         )
         print("Done.")
 
-    if plot_energy_over_noise_flag:
+    if plot_energy_over_noise:
         options = {
             "H_2": {
                 "list_of_cx_error_prob": (
