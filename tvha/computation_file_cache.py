@@ -183,7 +183,7 @@ class ComputationFileCache(ABC):
         self,
         missing_datapoints: Sequence[dict[str, Any]],
     ) -> list[pd.DataFrame]:
-        """Compute missing datapoints and flust results to CSV.
+        """Compute missing datapoints and flush results to CSV.
 
         Args:
             missing_datapoints: List of parameter sets (as dicts).
