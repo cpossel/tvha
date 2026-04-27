@@ -35,7 +35,7 @@ develop = [
 repository = "https://github.com/cpossel/tvha"
 
 [tool.setuptools]
-py-modules = ["tvha"]
+packages = ["tvha"]
 
 [tool.setuptools_scm]
 write_to = "tvha/__version__.py"
