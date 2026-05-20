@@ -1255,19 +1255,23 @@ class VHAPlots(ComputationFileCache):
                 thresholds_gamma=list_of_threshold_gamma
             )
 
+        datapoints = self.get_datapoints(
+            datapoints=[
+                {
+                    "threshold_gamma": threshold_gamma,
+                    "trotter_steps": trotter_steps,
+                    "max_evals": max_evals,
+                }
+                for threshold_gamma in list_of_threshold_gamma
+                for trotter_steps, max_evals in zip(
+                    list_of_trotter_steps, list_of_max_evals, strict=True
+                )
+            ]
+        )
+
         A, B = np.meshgrid(list_of_threshold_gamma, list_of_trotter_steps, indexing="ij")  # noqa: N806
 
-        def _get_energy_tmp(i: int, j: int) -> float | list:
-            return self.get_datapoints(
-                threshold_gamma=list_of_threshold_gamma[int(i)],
-                trotter_steps=list_of_trotter_steps[int(j)],
-                max_evals=list_of_max_evals[int(j)],
-            )["energy"].iloc[0]
-
-        energies_reshaped = np.fromfunction(
-            np.vectorize(_get_energy_tmp),
-            shape=A.shape,
-        )
+        energies_reshaped = datapoints["energy"].to_numpy().reshape(A.shape)
 
         ax = plt.figure().gca()
         plt.pcolormesh(A, B, energies_reshaped, cmap="hot", edgecolors="face")
