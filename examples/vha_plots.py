@@ -941,11 +941,11 @@ class VHAPlots(ComputationFileCache):
         energy_uccsd = energy_data[
             (energy_data["ansatz_name"] == "UCCSD")
             & (energy_data["max_evals"] == list_of_max_evals[0])
-        ].iloc[0]
+        ]["energy"].iloc[0]
         energy_uccsdt = energy_data[
             (energy_data["ansatz_name"] == "UCCSDT")
             & (energy_data["max_evals"] == list_of_max_evals[0])
-        ].iloc[0]
+        ]["energy"].iloc[0]
 
         # UCCSD
         if np.isclose(energy_uccsd, energy_fci):
@@ -981,7 +981,7 @@ class VHAPlots(ComputationFileCache):
         energy_hea = energy_data[
             (energy_data["ansatz_name"] == "HEA")
             & (energy_data["max_evals"] == list_of_max_evals[0])
-        ].iloc[0]
+        ]["energy"].iloc[0]
         if np.isclose(energy_hea, energy_fci):
             labels_close_to_fci.append("HEA")
         elif np.isclose(energy_uccsd, energy_hf):
@@ -1126,11 +1126,11 @@ class VHAPlots(ComputationFileCache):
         energy_uccsd = energy_data[
             (energy_data["ansatz_name"] == "UCCSD")
             & (energy_data["max_evals"] == list_of_max_evals[0])
-        ].iloc[0]
+        ]["energy"].iloc[0]
         energy_uccsdt = energy_data[
             (energy_data["ansatz_name"] == "UCCSDT")
             & (energy_data["max_evals"] == list_of_max_evals[0])
-        ].iloc[0]
+        ]["energy"].iloc[0]
 
         # UCCSD
         if np.isclose(energy_uccsd, energy_fci):
@@ -1164,7 +1164,7 @@ class VHAPlots(ComputationFileCache):
         energy_hea = energy_data[
             (energy_data["ansatz_name"] == "HEA")
             & (energy_data["max_evals"] == list_of_max_evals[0])
-        ].iloc[0]
+        ]["energy"].iloc[0]
         if np.isclose(energy_hea, energy_fci):
             labels_close_to_fci.append("HEA")
         elif np.isclose(energy_uccsd, energy_hf):
