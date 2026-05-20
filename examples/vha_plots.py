@@ -1245,14 +1245,14 @@ class VHAPlots(ComputationFileCache):
             add_title: Whether to add a title to the plot.
         """
         if isinstance(max_evals, Iterable):
-            list_of_max_evals = list(max_evals)
+            list_of_max_evals = sorted(max_evals)
         else:
             list_of_max_evals = [max_evals] * len(list_of_trotter_steps)
         if list_of_threshold_gamma is None:
-            list_of_threshold_gamma = self._vha_dummy.possible_thresholds_gamma
+            list_of_threshold_gamma = sorted(self._vha_dummy.possible_thresholds_gamma)
         else:
-            list_of_threshold_gamma = self._get_final_thresholds_gamma(
-                thresholds_gamma=list_of_threshold_gamma
+            list_of_threshold_gamma = sorted(
+                self._get_final_thresholds_gamma(thresholds_gamma=list_of_threshold_gamma)
             )
 
         datapoints = self.get_datapoints(
@@ -1268,10 +1268,13 @@ class VHAPlots(ComputationFileCache):
                 )
             ]
         )
-
         A, B = np.meshgrid(list_of_threshold_gamma, list_of_trotter_steps, indexing="ij")  # noqa: N806
 
-        energies_reshaped = datapoints["energy"].to_numpy().reshape(A.shape)
+        energies_reshaped = (
+            datapoints.sort_values(by=["threshold_gamma", "trotter_steps"])["energy"]
+            .to_numpy()
+            .reshape(A.shape)
+        )
 
         ax = plt.figure().gca()
         plt.pcolormesh(A, B, energies_reshaped, cmap="hot", edgecolors="face")
