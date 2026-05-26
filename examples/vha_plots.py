@@ -1911,10 +1911,7 @@ class VHAPlots(ComputationFileCache):
                     e - abs(e_disc)
                     for e_disc, e in zip(energies_discarded_part, energies, strict=True)
                 ],
-                y2=[
-                    e + abs(e_disc)
-                    for e_disc, e in zip(energies_discarded_part, energies, strict=True)
-                ],
+                y2=energies,
                 label="error estimate (evaluation of discarded part)",
                 color=colors_tvha[idx % len(list_of_trotter_steps)],
                 alpha=0.4,
