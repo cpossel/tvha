@@ -94,13 +94,15 @@ class VHAPlots(ComputationFileCache):
         molecule_name: str,
         problem: ElectronicStructureProblem,
         mapper: FermionicMapper | None,
+        **kwargs,  # noqa: ANN003
     ) -> None:
         """Initializes all needed variables for plotting of properties of tVHA."""
         self._epsilon = 1e-11  # tolerance for floats to be considered equal
         output_path.mkdir(exist_ok=True)
         self.output_path = output_path.resolve()
         super().__init__(
-            output_file=Path(self.output_path).joinpath(f"energies_simulator_{molecule_name}.csv")
+            output_file=Path(self.output_path).joinpath(f"energies_simulator_{molecule_name}.csv"),
+            **kwargs,
         )
         self.molecule_name = molecule_name
         self.problem = problem
