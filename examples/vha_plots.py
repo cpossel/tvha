@@ -850,9 +850,51 @@ class VHAPlots(ComputationFileCache):
         trotter_steps: int | Sequence[int] = 1,
         list_of_threshold_gamma: Sequence[float] | None = None,
         max_evals: int | Sequence[int] = 1000,
+        show_truncation_error_estimate: bool = False,
+        show_hea: bool = True,
+        show_uccsd: bool = True,
+        show_uccsdt: bool = True,
         add_title: bool = True,
     ) -> None:
         """Plots energy of tVHA depending on the truncation threshold.
+
+        Optionally show HEA, UCCSD, and UCCSDT for comparison.
+
+        Optionally show an a posteriori estimate for the truncation error.
+
+        H = H0 + H1, where H0 is the truncated Hamiltonian and
+        H1 is the part that is discarded due to truncation.
+        Accordingly, |psi> is the wave function / circuit with optimal parameters {theta}
+        without truncation and
+        |psi0> denotes the truncated circuit with parameters {theta0} optimized for the
+        cost function E0 = <psi0|H|psi0>.
+        We are interested in the energy without truncation errors E = <psi|H|psi> but don't
+        know |psi> since it is represented by a circuit that is often too long to be feasible.
+        So, three estimates for the error Delta E = abs(E-E0) are considered:
+
+        1. E_discarded = <psi0|H1|psi0> estimates the contribution of the discarded part of
+        the Hamiltonian and assumes that the effect is similar to the effect of the transition
+        from |psi> to |psi0>. The error estimate is then given by
+        Delta E_discarded = abs(E_discarded-E0).
+        This estimate is easy to achive; in principle, no additional calculations are needed
+        as the contribution of these terms is already calculated within
+        <psi0|H|psi0> = <psi0|H0+h1|psi0>.
+        Note: For simplicity of coding, this term is re-evaluated instead of extracting it from
+        the raw result.
+
+        2. -- not used --
+        1 - sum(abs(alpha_i^truncated)) / sum(abs(alpha_i^whole)) uses the absolute magnitude
+        of the terms in the Hamiltonian. It is a very rough estimate and is almost useless.
+        But it is very easy and fast to calculate.
+
+        3. -- not used --
+        E_extrapolated = <psi{theta0}|H|psi{theta0}> uses the parameters from |psi0> but
+        inserts them into the full circuit |psi>. The error estimate is then given by
+        Delta E_extrapolated = abs(E_extrapolated-E0). This estimate is prone to hardware noise
+        and only feasible for full circuits that are small enough compared to the noise level.
+
+        None of the estimates give information about the Trotterization error.
+
 
         Args:
             trotter_steps: The number of Trotter steps to use.
@@ -865,6 +907,12 @@ class VHAPlots(ComputationFileCache):
                 If a single value, it will be used for all trotter_steps.
                 If given as a list, the first value will be used for the first element of the
                 trotter_steps list, the second for the second etc.
+            show_truncation_error_estimate: Whether to add the truncation error estimate to the
+                plot. Be aware that this option requires possibly slow calculations
+                which aren't cached for subsequent runs.
+            show_hea: Whether to add the HEA energy to the plot.
+            show_uccsd: Whether to add the UCCSD energy to the plot.
+            show_uccsdt: Whether to add the UCCSDT energy to the plot.
             add_title: Whether to add a title to the plot.
         """
         list_of_trotter_steps = (
@@ -900,8 +948,12 @@ class VHAPlots(ComputationFileCache):
                         "threshold_gamma": threshold_gamma,
                     }
                 )
-        for ansatz_name in ("HEA", "UCCSD", "UCCSDT"):
-            datapoints.append({"ansatz_name": ansatz_name, "max_evals": list_of_max_evals[0]})
+        if show_hea:
+            datapoints.append({"ansatz_name": "HEA", "max_evals": list_of_max_evals[0]})
+        if show_uccsd:
+            datapoints.append({"ansatz_name": "UCCSD", "max_evals": list_of_max_evals[0]})
+        if show_uccsdt:
+            datapoints.append({"ansatz_name": "UCCSDT", "max_evals": list_of_max_evals[0]})
 
         energy_data = self.get_datapoints(datapoints=datapoints)
 
@@ -927,6 +979,128 @@ class VHAPlots(ComputationFileCache):
                 linewidth=0.8,
                 color=colors_tvha[idx % len(list_of_trotter_steps)],
             )
+
+            # error estimate
+            if show_truncation_error_estimate:
+                final_parameters = energy_data[
+                    (energy_data["ansatz_name"] == "tVHA")
+                    & (energy_data["trotter_steps"] == trotter_steps)
+                    & (energy_data["max_evals"] == max_evals)
+                ].sort_values(by="threshold_gamma")["optimal_parameters"]
+
+                estimator = StatevectorEstimator()
+                # Note: It might be a nice extension to support a noise estimator, too.
+
+                energies_discarded_part = []
+                for threshold_gamma, param in zip(
+                    list_of_threshold_gamma, final_parameters, strict=True
+                ):
+                    tvha = VariationalHamiltonianAnsatz(
+                        problem=self.problem,
+                        mapper=self.mapper,
+                        threshold_gamma=threshold_gamma,
+                        trotter_steps=trotter_steps,
+                    )
+
+                    second_q_op_discarded_part = tvha._get_hamiltonian_gamma(
+                        threshold_gamma=1.0
+                    ) - tvha._get_hamiltonian_gamma(threshold_gamma=threshold_gamma)
+                    operator_discarded = self.mapper.map(second_q_ops=second_q_op_discarded_part)
+
+                    job = estimator.run(
+                        tvha,
+                        operator_discarded,
+                        ast.literal_eval(param) if isinstance(param, str) else param,
+                    )
+                    estimator_result = job.result()
+                    energy = (
+                        estimator_result.values[0]
+                        if len(estimator_result.values) == 1
+                        else estimator_result.values
+                    )
+                    energies_discarded_part.append(energy)
+
+                plt.fill_between(
+                    x=list_of_threshold_gamma,
+                    y1=[
+                        e - abs(e_disc)
+                        for e_disc, e in zip(energies_discarded_part, energies, strict=True)
+                    ],
+                    y2=energies,
+                    label="error estimate (evaluation of discarded part)",
+                    color=colors_tvha[idx % len(list_of_trotter_steps)],
+                    alpha=0.4,
+                )
+
+                # vha_full = VariationalHamiltonianAnsatz(
+                #     problem=self.problem,
+                #     mapper=self.mapper,
+                #     threshold_gamma=1,
+                #     trotter_steps=trotter_steps,
+                # )
+
+                # Very rouogh energy error estimate
+                # # 2st error estimate
+                # terms_alpha = [abs(term) for term in vha_full._hamiltonian_alpha.values()]
+                # terms_beta = [abs(term) for term in vha_full._hamiltonian_beta.values()]
+                # cumsum_gamma_terms = []
+                # for threshold_gamma in list_of_threshold_gamma:
+                #     cumsum_gamma_terms.append(
+                #         sum(
+                #             [
+                #                 abs(term)
+                #                 for term in vha_full._get_hamiltonian_gamma(
+                #                     threshold_gamma=threshold_gamma
+                #                 ).values()
+                #             ]
+                #         )
+                #     )
+                # # vha_full._get_sorted_noncoulomb_two_body_terms()
+                # sum_non_gamma_terms = sum(terms_alpha + terms_beta)
+                # sum_all_terms = sum_non_gamma_terms + cumsum_gamma_terms[-1]
+                # relative_error_estimate = [
+                #     1 - (c + sum_non_gamma_terms) / sum_all_terms for c in cumsum_gamma_terms
+                # ]
+                # plt.fill_between(
+                #     x=list_of_threshold_gamma,
+                #     y1=[e - err * e for err, e in zip(relative_error_estimate, energies, strict=True)],
+                #     y2=[e + err * e for err, e in zip(relative_error_estimate, energies, strict=True)],
+                #     label="a priori error estimate",
+                #     color=colors_tvha[idx % len(list_of_trotter_steps)],
+                #     alpha=0.2,
+                # )
+
+                # Error estimate which is not feasible for larger systems
+                # # 3rd error estimate
+                # second_q_op_full = vha_full.hamilton_operator
+                # operator_full = self.mapper.map(second_q_ops=second_q_op_full)
+                # energies_extrapolated = []
+                # for param in final_parameters:
+                #     job = estimator.run(
+                #         vha_full,
+                #         operator_full,
+                #         ast.literal_eval(param) if isinstance(param, str) else param,
+                #     )
+                #     estimator_result = job.result()
+                #     energy = (
+                #         estimator_result.values[0]
+                #         if len(estimator_result.values) == 1
+                #         else estimator_result.values
+                #     )
+                #     energies_extrapolated.append(energy)
+                # plt.errorbar(
+                #     x=list_of_threshold_gamma,
+                #     y=energies,
+                #     yerr=[
+                #         abs(e - e_extrapolated)
+                #         for e, e_extrapolated in zip(energies, energies_extrapolated, strict=True)
+                #     ],
+                #     label="error estimate (parameter extrapolation to full circuit)",
+                #     color=colors_tvha[idx % len(list_of_trotter_steps)],
+                #     linestyle="none",
+                #     capsize=4,
+                # )
+
         xmin, xmax = plt.xlim()
 
         labels_close_to_hf = ["HF"]
@@ -940,63 +1114,70 @@ class VHAPlots(ComputationFileCache):
         energy_fci = self.numerical_energies["computed_energy"]
 
         # UCC
-        energy_uccsd = energy_data[
-            (energy_data["ansatz_name"] == "UCCSD")
-            & (energy_data["max_evals"] == list_of_max_evals[0])
-        ]["energy"].iloc[0]
-        energy_uccsdt = energy_data[
-            (energy_data["ansatz_name"] == "UCCSDT")
-            & (energy_data["max_evals"] == list_of_max_evals[0])
-        ]["energy"].iloc[0]
+        if show_uccsd:
+            energy_uccsd = energy_data[
+                (energy_data["ansatz_name"] == "UCCSD")
+                & (energy_data["max_evals"] == list_of_max_evals[0])
+            ]["energy"].iloc[0]
+        if show_uccsdt:
+            energy_uccsdt = energy_data[
+                (energy_data["ansatz_name"] == "UCCSDT")
+                & (energy_data["max_evals"] == list_of_max_evals[0])
+            ]["energy"].iloc[0]
 
         # UCCSD
-        if np.isclose(energy_uccsd, energy_fci):
-            labels_close_to_fci.append("UCCSD")
-        elif np.isclose(energy_uccsd, energy_hf):
-            labels_close_to_hf.append("UCCSD")
-        else:
-            plt.hlines(
-                y=energy_uccsd,
-                xmin=xmin,
-                xmax=xmax,
-                label="UCCSD / UCCSDT" if np.isclose(energy_uccsdt, energy_uccsd) else "UCCSD",
-                linestyles="dashdot",
-                color=colors_ucc[0],
-            )
+        if show_uccsd:
+            if np.isclose(energy_uccsd, energy_fci):
+                labels_close_to_fci.append("UCCSD")
+            elif np.isclose(energy_uccsd, energy_hf):
+                labels_close_to_hf.append("UCCSD")
+            else:
+                plt.hlines(
+                    y=energy_uccsd,
+                    xmin=xmin,
+                    xmax=xmax,
+                    label="UCCSD / UCCSDT"
+                    if show_uccsdt and np.isclose(energy_uccsdt, energy_uccsd)
+                    else "UCCSD",
+                    linestyles="dashdot",
+                    color=colors_ucc[0],
+                )
 
         # UCCSDT
-        if np.isclose(energy_uccsdt, energy_fci):
-            labels_close_to_fci.append("UCCSDT")
-        elif np.isclose(energy_uccsdt, energy_hf):
-            labels_close_to_hf.append("UCCSDT")
-        elif not np.isclose(energy_uccsdt, energy_uccsd):
-            plt.hlines(
-                y=energy_uccsdt,
-                xmin=xmin,
-                xmax=xmax,
-                label="UCCSDT",
-                linestyles="dashdot",
-                color=colors_ucc[1],
-            )
+        if show_uccsdt:
+            if np.isclose(energy_uccsdt, energy_fci):
+                labels_close_to_fci.append("UCCSDT")
+            elif np.isclose(energy_uccsdt, energy_hf):
+                labels_close_to_hf.append("UCCSDT")
+            elif not np.isclose(energy_uccsdt, energy_uccsd):
+                plt.hlines(
+                    y=energy_uccsdt,
+                    xmin=xmin,
+                    xmax=xmax,
+                    label="UCCSDT",
+                    linestyles="dashdot",
+                    color=colors_ucc[1],
+                )
 
         # HEA
-        energy_hea = energy_data[
-            (energy_data["ansatz_name"] == "HEA")
-            & (energy_data["max_evals"] == list_of_max_evals[0])
-        ]["energy"].iloc[0]
-        if np.isclose(energy_hea, energy_fci):
-            labels_close_to_fci.append("HEA")
-        elif np.isclose(energy_uccsd, energy_hf):
-            labels_close_to_hf.append("HEA")
-        else:
-            plt.hlines(
-                y=energy_hea,
-                xmin=xmin,
-                xmax=xmax,
-                label="HEA",
-                linestyles="dashed",
-                color=color_hea,
-            )
+        if show_hea:
+            energy_hea = energy_data[
+                (energy_data["ansatz_name"] == "HEA")
+                & (energy_data["max_evals"] == list_of_max_evals[0])
+            ]["energy"].iloc[0]
+            if np.isclose(energy_hea, energy_fci):
+                labels_close_to_fci.append("HEA")
+            elif np.isclose(energy_uccsd, energy_hf):
+                labels_close_to_hf.append("HEA")
+            else:
+                plt.hlines(
+                    y=energy_hea,
+                    xmin=xmin,
+                    xmax=xmax,
+                    label="HEA",
+                    linestyles="dashed",
+                    color=color_hea,
+                )
 
         # HF energy
         plt.hlines(
@@ -1034,13 +1215,16 @@ class VHAPlots(ComputationFileCache):
         plt.ylabel("Energy in Hartree")
         if add_title:
             plt.title(
-                f"Energy of tVHA depending on the truncation threshold (${self.molecule_name}$)"
+                f"Energy of tVHA depending on the truncation threshold "
+                f"(${self.molecule_name}$)"
                 f"\n({list_of_max_evals} function evaluations)"
             )
         plt.xlim(xmin, xmax)
-        filename = f"{self.molecule_name}_energy_over_truncation_threshold_"
-        filename += "_".join(str(trotter_steps) for trotter_steps in list_of_trotter_steps)
-        filename += ".svg"
+        filename = (
+            f"{self.molecule_name}_energy_over_truncation_threshold_"
+            f"{'error_estimate_' if show_truncation_error_estimate else ''}"
+            f"{'_'.join(str(trotter_steps) for trotter_steps in list_of_trotter_steps)}.svg"
+        )
         plt.savefig(self.output_path.joinpath(filename), format="svg")
         plt.close()
 
@@ -1755,299 +1939,6 @@ class VHAPlots(ComputationFileCache):
         plt.savefig(self.output_path.joinpath(filename), format="svg")
         plt.close()
 
-    def plot_error_estimate_over_truncation_threshold(
-        self,
-        trotter_steps: int | Sequence[int] = 1,
-        list_of_threshold_gamma: Sequence[float] | None = None,
-        max_evals: int | Sequence[int] = 1000,
-        add_title: bool = True,
-    ) -> None:
-        """Plots energy of tVHA and its error estimates depending on the truncation threshold.
-
-        H = H0 + H1, where H0 is the truncated Hamiltonian and
-        H1 is the part that is discarded due to truncation.
-        Accordingly, |psi> is the wave function / circuit with optimal parameters {theta}
-        without truncation and
-        |psi0> denotes the truncated circuit with parameters {theta0} optimized for the
-        cost function E0 = <psi0|H|psi0>.
-        We are interested in the energy without truncation errors E = <psi|H|psi> but don't
-        know |psi> since it is represented by a circuit that is often too long to be feasible.
-        So, three estimates for the error Delta E = abs(E-E0) are considered:
-
-        1. E_discarded = <psi0|H1|psi0> estimates the contribution of the discarded part of
-        the Hamiltonian and assumes that the effect is similar to the effect of the transition
-        from |psi> to |psi0>. The error estimate is then given by
-        Delta E_discarded = abs(E_discarded-E0).
-        This estimate is easy to achive; in principle, no additional calculations are needed
-        as the contribution of these terms is already calculated within
-        <psi0|H|psi0> = <psi0|H0+h1|psi0>.
-        Note: For simplicity of coding, this term is re-evaluated instead of extracting it from
-        the raw result.
-
-        2. 1 - sum(abs(alpha_i^truncated)) / sum(abs(alpha_i^whole)) uses the absolute magnitude
-        of the terms in the Hamiltonian. It is a very rough estimate and is almost useless.
-        But it is very easy and fast to calculate.
-
-        3. E_extrapolated = <psi{theta0}|H|psi{theta0}> uses the parameters from |psi0> but
-        inserts them into the full circuit |psi>. The error estimate is then given by
-        Delta E_extrapolated = abs(E_extrapolated-E0). This estimate is prone to hardware noise
-        and only feasible for full circuits that are small enough compared to the noise level.
-
-        None of the estimates give information about the Trotterization error.
-
-        Args:
-            trotter_steps: The number of Trotter steps to use.
-                If given as single element, only a single line is plotted.
-                If given as list, all list elements are used in sorted order
-                creating a line for each number of Trotter steps.
-            list_of_threshold_gamma: The truncation thresholds to use for this plot.
-                If 'None', all possible truncation thresholds are used.
-            max_evals: Maximum number of function evaluations of the optimization algorithm (SBPLX).
-                If a single value, it will be used for all trotter_steps.
-                If given as a list, the first value will be used for the first element of the
-                trotter_steps list, the second for the second etc.
-            add_title: Whether to add a title to the plot.
-        """
-        list_of_trotter_steps = (
-            list(trotter_steps) if isinstance(trotter_steps, Iterable) else [trotter_steps]
-        )
-        if isinstance(max_evals, Iterable):
-            list_of_max_evals = list(max_evals)
-        else:
-            list_of_max_evals = [max_evals] * len(list_of_trotter_steps)
-        if list_of_threshold_gamma is None:
-            list_of_threshold_gamma = self._vha_dummy.possible_thresholds_gamma
-        else:
-            list_of_threshold_gamma = self._get_final_thresholds_gamma(
-                thresholds_gamma=list_of_threshold_gamma
-            )
-
-        if len(list_of_trotter_steps) > len(colors_tvha):
-            raise ValueError(
-                "The energy over truncation threshold plot is not intended for a "
-                "large amount of Trotter steps. Please reduce them from "
-                f"{len(list_of_trotter_steps)} to at most {len(colors_tvha)}.",
-            )
-
-        # Retrieve all needed energy data
-        datapoints = []
-        for trotter_steps, max_evals in zip(list_of_trotter_steps, list_of_max_evals, strict=True):
-            for threshold_gamma in list_of_threshold_gamma:
-                datapoints.append(
-                    {
-                        "ansatz_name": "tVHA",
-                        "trotter_steps": trotter_steps,
-                        "max_evals": max_evals,
-                        "threshold_gamma": threshold_gamma,
-                    }
-                )
-
-        energy_data = self.get_datapoints(datapoints=datapoints)
-
-        # tVHA
-        for idx, (trotter_steps, max_evals) in enumerate(
-            zip(list_of_trotter_steps, list_of_max_evals, strict=True)
-        ):
-            if trotter_steps == 1:
-                label = f"tVHA ({trotter_steps} Trotter step)"
-            else:
-                label = f"tVHA ({trotter_steps} Trotter steps)"
-            energies = energy_data[
-                (energy_data["ansatz_name"] == "tVHA")
-                & (energy_data["trotter_steps"] == trotter_steps)
-                & (energy_data["max_evals"] == max_evals)
-            ].sort_values(by="threshold_gamma")["energy"]
-
-            final_parameters = energy_data[
-                (energy_data["ansatz_name"] == "tVHA")
-                & (energy_data["trotter_steps"] == trotter_steps)
-                & (energy_data["max_evals"] == max_evals)
-            ].sort_values(by="threshold_gamma")["optimal_parameters"]
-
-            estimator = StatevectorEstimator()
-            # Note: It might be a nice extension to support a noise estimator, too.
-
-            plt.plot(
-                list_of_threshold_gamma,
-                energies,
-                label=label,
-                marker=["d", "o", "X", "+", "x"][idx % len(list_of_trotter_steps)],
-                linestyle="dotted",
-                linewidth=0.8,
-                color=colors_tvha[idx % len(list_of_trotter_steps)],
-            )
-
-            # error estimate
-            energies_discarded_part = []
-            for threshold_gamma, param in zip(
-                list_of_threshold_gamma, final_parameters, strict=True
-            ):
-                tvha = VariationalHamiltonianAnsatz(
-                    problem=self.problem,
-                    mapper=self.mapper,
-                    threshold_gamma=threshold_gamma,
-                    trotter_steps=trotter_steps,
-                )
-
-                second_q_op_discarded_part = tvha._get_hamiltonian_gamma(
-                    threshold_gamma=1.0
-                ) - tvha._get_hamiltonian_gamma(threshold_gamma=threshold_gamma)
-                operator_discarded = self.mapper.map(second_q_ops=second_q_op_discarded_part)
-
-                job = estimator.run(
-                    tvha,
-                    operator_discarded,
-                    ast.literal_eval(param) if isinstance(param, str) else param,
-                )
-                estimator_result = job.result()
-                energy = (
-                    estimator_result.values[0]
-                    if len(estimator_result.values) == 1
-                    else estimator_result.values
-                )
-                energies_discarded_part.append(energy)
-
-            plt.fill_between(
-                x=list_of_threshold_gamma,
-                y1=[
-                    e - abs(e_disc)
-                    for e_disc, e in zip(energies_discarded_part, energies, strict=True)
-                ],
-                y2=energies,
-                label="error estimate (evaluation of discarded part)",
-                color=colors_tvha[idx % len(list_of_trotter_steps)],
-                alpha=0.4,
-            )
-
-            # vha_full = VariationalHamiltonianAnsatz(
-            #     problem=self.problem,
-            #     mapper=self.mapper,
-            #     threshold_gamma=1,
-            #     trotter_steps=trotter_steps,
-            # )
-
-            # Very rouogh energy error estimate
-            # # 2st error estimate
-            # terms_alpha = [abs(term) for term in vha_full._hamiltonian_alpha.values()]
-            # terms_beta = [abs(term) for term in vha_full._hamiltonian_beta.values()]
-            # cumsum_gamma_terms = []
-            # for threshold_gamma in list_of_threshold_gamma:
-            #     cumsum_gamma_terms.append(
-            #         sum(
-            #             [
-            #                 abs(term)
-            #                 for term in vha_full._get_hamiltonian_gamma(
-            #                     threshold_gamma=threshold_gamma
-            #                 ).values()
-            #             ]
-            #         )
-            #     )
-            # # vha_full._get_sorted_noncoulomb_two_body_terms()
-            # sum_non_gamma_terms = sum(terms_alpha + terms_beta)
-            # sum_all_terms = sum_non_gamma_terms + cumsum_gamma_terms[-1]
-            # relative_error_estimate = [
-            #     1 - (c + sum_non_gamma_terms) / sum_all_terms for c in cumsum_gamma_terms
-            # ]
-            # plt.fill_between(
-            #     x=list_of_threshold_gamma,
-            #     y1=[e - err * e for err, e in zip(relative_error_estimate, energies, strict=True)],
-            #     y2=[e + err * e for err, e in zip(relative_error_estimate, energies, strict=True)],
-            #     label="a priori error estimate",
-            #     color=colors_tvha[idx % len(list_of_trotter_steps)],
-            #     alpha=0.2,
-            # )
-
-            # Error estimate which is not feasible for larger systems
-            # # 3rd error estimate
-            # second_q_op_full = vha_full.hamilton_operator
-            # operator_full = self.mapper.map(second_q_ops=second_q_op_full)
-            # energies_extrapolated = []
-            # for param in final_parameters:
-            #     job = estimator.run(
-            #         vha_full,
-            #         operator_full,
-            #         ast.literal_eval(param) if isinstance(param, str) else param,
-            #     )
-            #     estimator_result = job.result()
-            #     energy = (
-            #         estimator_result.values[0]
-            #         if len(estimator_result.values) == 1
-            #         else estimator_result.values
-            #     )
-            #     energies_extrapolated.append(energy)
-            # plt.errorbar(
-            #     x=list_of_threshold_gamma,
-            #     y=energies,
-            #     yerr=[
-            #         abs(e - e_extrapolated)
-            #         for e, e_extrapolated in zip(energies, energies_extrapolated, strict=True)
-            #     ],
-            #     label="error estimate (parameter extrapolation to full circuit)",
-            #     color=colors_tvha[idx % len(list_of_trotter_steps)],
-            #     linestyle="none",
-            #     capsize=4,
-            # )
-
-        xmin, xmax = plt.xlim()
-
-        energy_hf = (
-            self.problem.reference_energy
-            - self.numerical_energies["nuclear_repulsion_energy"]
-            - self.numerical_energies["inactive_space_energy"]
-        )
-        energy_fci = self.numerical_energies["computed_energy"]
-
-        plt.ylim(
-            energy_fci - (energy_hf - energy_fci) * 0.05,
-            energy_hf + (energy_hf - energy_fci) * 0.05,
-        )
-
-        # HF energy
-        plt.hlines(
-            energy_hf,
-            xmin=xmin,
-            xmax=xmax,
-            label="HF",
-            color=color_hf,
-            linestyles="solid",
-            zorder=0,
-        )
-
-        # FCI energy
-        plt.hlines(
-            energy_fci,
-            xmin=xmin,
-            xmax=xmax,
-            label="FCI",
-            color=color_fci,
-            linestyles="solid",
-            zorder=0,
-        )
-        plt.fill_between(
-            (xmin, xmax),
-            energy_fci,
-            energy_fci + 0.0015,
-            label="chemical accuracy",
-            color=color_fci,
-            alpha=0.4,
-            zorder=0,
-        )
-
-        plt.legend()
-        plt.xlabel("Truncation threshold")
-        plt.ylabel("Energy in Hartree")
-        if add_title:
-            plt.title(
-                "Error estimate of tVHA depending on the truncation threshold "
-                f"(${self.molecule_name}$)\n({list_of_max_evals} function evaluations)"
-            )
-        plt.xlim(xmin, xmax)
-        filename = f"{self.molecule_name}_error_estimate_over_truncation_threshold_"
-        filename += "_".join(str(trotter_steps) for trotter_steps in list_of_trotter_steps)
-        filename += ".svg"
-        plt.savefig(self.output_path.joinpath(filename), format="svg")
-        plt.close()
-
 
 def plot_parameter_count(
     output_path: Path,
@@ -2594,12 +2485,33 @@ def main() -> None:
         print("Done.")
 
     if plot_error_estimate_over_truncation_threshold:
+        options = {
+            "H_2": {
+                "trotter_steps": 1,
+                "max_evals": 1000,
+            },
+            "CH_2": {
+                "trotter_steps": 1,
+                "max_evals": 1000,
+            },
+            "H_4": {
+                "trotter_steps": (1, 5),
+                "max_evals": (1000, 5000),
+            },
+            "LiH": {
+                "trotter_steps": (1, 5),
+                "max_evals": (1000, 5000),
+                "list_of_threshold_gamma": np.linspace(0, 1, 65),
+            },
+        }
         print("Plotting error estimate over truncation threshold...")
-        vha_plots.plot_error_estimate_over_truncation_threshold(
-            trotter_steps=1 if molecule_name in ("H_2", "CH_2") else (1, 5),
-            max_evals=1000 if molecule_name in ("H_2", "CH_2") else (1000, 5000),
-            list_of_threshold_gamma=np.linspace(0, 1, 65) if molecule_name == "LiH" else None,
+        vha_plots.plot_energy_over_truncation_threshold(
+            show_truncation_error_estimate=True,
+            show_hea=False,
+            show_uccsd=False,
+            show_uccsdt=False,
             add_title=add_title,
+            **options[molecule_name],
         )
         print("Done.")
 
