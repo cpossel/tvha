@@ -2246,35 +2246,33 @@ def main() -> None:
     # molecule_name = "NO_3" # more complex due to non-diagonal fock operator
     # molecule_name = "CH" # HF is already within chemical accuracy
 
-    if molecule_name in ("H_2", "H_4", "LiH"):  # noqa: SIM108
-        basis_set = "sto3g"  # until now used for H_2, H_4, LiH; all others use def2-svp by default
-    else:
-        basis_set = "def2-svp"
-
+    basis_set = "sto3g" if molecule_name in ("H_2", "H_4", "LiH") else "def2-svp"
     list_of_trotter_steps = (1, 2, 5)
 
     mapper = JordanWignerMapper()
 
-    thresholds_gamma = None  # for all possible thresholds
-    # info: number of datapoints (i.e. non-Coulomb two-body terms + 1):
+    # Truncation thresholds: None for all possible thresholds, or specify a sequence
+    thresholds_gamma = None
+
+    # Info: number of datapoints (i.e. non-Coulomb two-body terms + 1):
     # 5 for H_2, 141 for H_4, 529 for LiH, 13 for CH_2, 43 for NO_3, 13 for CH
-    plot_histograms = True
-    plot_density_distributions = True
-    plot_cnot_count_over_truncation_threshold = True
-    plot_circuit_depth_over_truncation_threshold = False
-    plot_energy_over_truncation_threshold = False
-    plot_energy_over_trotter_steps = False
-    plot_energy_over_truncation_threshold_and_trotter_steps = True
-    plot_energy_over_noise = True
-    plot_error_estimate_over_truncation_threshold = True
 
-    plot_parameter_count_over_ansatz = False
+    # Plot configuration: Set to True/False to enable/disable specific plots
+    plot_options = {
+        "histograms": True,
+        "density_distributions": False,
+        "cnot_count": True,
+        "circuit_depth": True,
+        "energy_over_threshold": True,
+        "energy_over_trotter": False,
+        "energy_heatmap": False,
+        "energy_over_noise": True,
+        "error_estimate": True,
+        "parameter_count": True,
+        "energy_landscape": False,  # Enable carefully: highly inefficient
+    }
 
-    # Enable carefully (highly inefficient since it does not save costly intermediate results):
-    plot_energy_landscape = False
-
-    # Option to add a title to the plots:
-    add_title = True
+    add_title = False
     # ---------------------------------------------------------------------------------------------
 
     output_folder = (
@@ -2290,250 +2288,314 @@ def main() -> None:
 
     vha = VariationalHamiltonianAnsatz(problem=problem, trotter_steps=1, mapper=mapper)
 
-    if thresholds_gamma is None:
-        thresholds_gamma = vha.possible_thresholds_gamma
-    else:
-        if thresholds_gamma != vha.possible_thresholds_gamma:
-            logger.info(
-                "γ thresholds were adjusted to the molecule. These are the new thresholds %s",  # noqa: RUF001
-                vha.possible_thresholds_gamma,
-            )
-            thresholds_gamma = vha.possible_thresholds_gamma
+    # Determine actual thresholds to use
+    thresholds_gamma = thresholds_gamma or vha.possible_thresholds_gamma
 
     vha_plots = VHAPlots(
         output_path=output_folder, molecule_name=molecule_name, problem=problem, mapper=mapper
     )
 
-    if plot_histograms:
-        vha_plots.plot_histogram(
-            hamiltonian=vha.hamilton_operator, log_x=True, log_y=False, add_title=add_title
-        )
-        vha_plots.plot_histogram(
-            hamiltonian=vha.hamilton_operator, log_x=False, log_y=False, add_title=add_title
-        )
-        vha_plots.plot_histogram(
-            hamiltonian=vha.hamilton_operator, log_x=True, log_y=True, add_title=add_title
-        )
-        vha_plots.plot_histogram(
-            hamiltonian=vha.hamilton_operator, log_x=False, log_y=True, add_title=add_title
-        )
-    if plot_density_distributions:
-        vha_plots.plot_cumulated_density_distribution_all_terms(
-            hamiltonian=vha.hamilton_operator, add_title=add_title
-        )
-        vha_plots.plot_cumulated_density_distribution_noncoulomb_terms(
-            hamiltonian=vha.hamilton_operator, add_title=add_title
-        )
-
     # All energies are given as electronic energies without the nuclear repulsion energy
     # unless stated explicitly to be the total energy.
 
     if logger.getEffectiveLevel() <= logging.DEBUG:
-        datapoint = vha_plots.get_datapoints(trotter_steps=1, threshold_gamma=1.0)
-        energy_statevector = datapoint["energy"].iloc[0]
-        optimal_parameters = datapoint["optimal_parameters"].iloc[0]
-        if len(optimal_parameters) == 3:
-            optimal_parameters_string = (
-                f"α={optimal_parameters[0]:.5g}, "  # noqa: RUF001
-                f"β={optimal_parameters[1]:.5g}, "
-                f"γ={optimal_parameters[2]:.5g}"  # noqa: RUF001
+        _print_debug_info(vha_plots, problem)
+
+    # ---------------------------------------------------------------------------------------------
+    # --- GENERATE PLOTS --------------------------------------------------------------------------
+
+    if plot_options["histograms"]:
+        _plot_histograms(vha_plots, vha.hamilton_operator, add_title)
+
+    if plot_options["density_distributions"]:
+        _plot_density_distributions(vha_plots, vha.hamilton_operator, add_title)
+
+    if plot_options["cnot_count"]:
+        _plot_cnot_count(vha_plots, add_title)
+
+    if plot_options["circuit_depth"]:
+        _plot_circuit_depth(vha_plots, add_title)
+
+    if plot_options["energy_landscape"]:
+        _plot_energy_landscape(vha_plots)
+
+    if plot_options["energy_over_threshold"]:
+        _plot_energy_over_threshold(
+            vha_plots, thresholds_gamma, add_title, list_of_trotter_steps=list_of_trotter_steps
+        )
+
+    if plot_options["energy_over_trotter"]:
+        _plot_energy_over_trotter(vha_plots, list_of_trotter_steps, add_title)
+
+    if plot_options["energy_heatmap"]:
+        _plot_energy_heatmap(vha_plots, list_of_trotter_steps, thresholds_gamma, add_title)
+
+    if plot_options["energy_over_noise"]:
+        _plot_energy_over_noise(vha_plots, molecule_name, add_title)
+
+    if plot_options["error_estimate"]:
+        _plot_error_estimate(vha_plots, molecule_name, add_title)
+
+    if plot_options["parameter_count"]:
+        _plot_parameter_count(problem, mapper, output_folder.parent, add_title)
+
+
+def _print_debug_info(vha_plots: VHAPlots, problem: ElectronicStructureProblem) -> None:
+    """Print debug information about the calculation."""
+    datapoint = vha_plots.get_datapoints(trotter_steps=1, threshold_gamma=1.0)
+    energy_statevector = datapoint["energy"].iloc[0]
+    optimal_parameters = datapoint["optimal_parameters"].iloc[0]
+
+    if len(optimal_parameters) == 3:
+        optimal_parameters_string = (
+            f"α={optimal_parameters[0]:.5g}, "
+            f"β={optimal_parameters[1]:.5g}, "
+            f"γ={optimal_parameters[2]:.5g}"
+        )
+    else:
+        optimal_parameters_string = str(optimal_parameters)
+
+    result_string = (
+        f"Total ground state energy in Hartree Fock approximation: {problem.reference_energy:.3f}\n"
+        "FCI energy (numerical diagonalization; only active space for active space calculations): "
+        f"{vha_plots.numerical_energies['computed_energy'] + vha_plots.numerical_energies['nuclear_repulsion_energy']:.3f}\n"
+        "Total ground state energy (VHA statevector simulator): "
+        f"{energy_statevector + vha_plots.numerical_energies['nuclear_repulsion_energy']:.3f}\n"
+        "Improvement over HF approx: "
+        f"{problem.reference_energy - (energy_statevector + vha_plots.numerical_energies['nuclear_repulsion_energy']):.3g}\n"
+        "Difference to FCI energy: "
+        f"{vha_plots.numerical_energies['computed_energy'] - energy_statevector:.3g}\n"
+        f"Optimal parameters: {optimal_parameters_string}"
+    )
+    print(result_string)
+
+
+def _plot_histograms(vha_plots: VHAPlots, hamiltonian: FermionicOp, add_title: bool) -> None:
+    """Plot all histogram variations."""
+    for log_x in (True, False):
+        for log_y in (True, False):
+            vha_plots.plot_histogram(
+                hamiltonian=hamiltonian, log_x=log_x, log_y=log_y, add_title=add_title
             )
-        else:
-            optimal_parameters_string = optimal_parameters
-        result_string = (
-            "Total ground state energy in Hartree Fock approximation "
-            f"{problem.reference_energy:.3f};\n"
-            "FCI energy (numerical diagonalization; only active space for active space calculations): "
-            f"{vha_plots.numerical_energies['computed_energy'] + vha_plots.numerical_energies['nuclear_repulsion_energy']:.3f}; \n"
-            "Total ground state energy (VHA statevector simulator): "
-            f"{energy_statevector + vha_plots.numerical_energies['nuclear_repulsion_energy']:.3f}; \n"
-            "Improvement over HF approx: "
-            f"{problem.reference_energy - (energy_statevector + vha_plots.numerical_energies['nuclear_repulsion_energy']):.3g}; \n"
-            "Difference to FCI energy: "
-            f"{vha_plots.numerical_energies['computed_energy'] - energy_statevector:.3g} \n"
-            "Optimal parameters: " + optimal_parameters_string
-        )
-        print(result_string)
 
-    if plot_cnot_count_over_truncation_threshold:
-        print("Plotting CNOT count over truncation threshold...")
-        vha_plots.plot_cnot_count_over_truncation_threshold(log_y=True, add_title=add_title)
-        vha_plots.plot_cnot_count_over_truncation_threshold(log_y=False, add_title=add_title)
-        print("Done.")
 
-    if plot_circuit_depth_over_truncation_threshold:
-        print("Plotting circuit depth over truncation threshold...")
+def _plot_density_distributions(
+    vha_plots: VHAPlots, hamiltonian: FermionicOp, add_title: bool
+) -> None:
+    """Plot cumulative density distributions."""
+    vha_plots.plot_cumulated_density_distribution_all_terms(
+        hamiltonian=hamiltonian, add_title=add_title
+    )
+    vha_plots.plot_cumulated_density_distribution_noncoulomb_terms(
+        hamiltonian=hamiltonian, add_title=add_title
+    )
+
+
+def _plot_cnot_count(vha_plots: VHAPlots, add_title: bool) -> None:
+    """Plot CNOT count over truncation threshold."""
+    print("Plotting CNOT count over truncation threshold...")
+    for log_y in (True, False):
+        vha_plots.plot_cnot_count_over_truncation_threshold(log_y=log_y, add_title=add_title)
+    print("Done.")
+
+
+def _plot_circuit_depth(vha_plots: VHAPlots, add_title: bool) -> None:
+    """Plot circuit depth over truncation threshold."""
+    print("Plotting circuit depth over truncation threshold...")
+    for log_y in (True, False):
         vha_plots.plot_circuit_depth_over_truncation_threshold(
-            log_y=True, add_cnot_count=False, add_title=add_title
+            log_y=log_y, add_cnot_count=False, add_title=add_title
         )
-        vha_plots.plot_circuit_depth_over_truncation_threshold(
-            log_y=False, add_cnot_count=False, add_title=add_title
-        )
-        print("Done.")
+    print("Done.")
 
-    if plot_energy_landscape:
-        print("Plotting energy landscape...")
-        vha_plots.plot_energy_landscape(
-            alphas=np.linspace(-1 * 3, 2 * 3, 50),  # periodicity for H2: roughly 3
-            betas=np.linspace(-1 * 9, 2 * 9, 50),  # periodicity for H2: roughly 9
-            gammas=np.linspace(-1 * 21, 2 * 21, 50),  # periodicity for H2: roughly 21
-        )
-        print("Done.")
 
-    if plot_energy_over_truncation_threshold:
-        print("Plotting energy over truncation threshold...")
-        vha_plots.plot_energy_over_truncation_threshold(
-            trotter_steps=1, list_of_threshold_gamma=thresholds_gamma, add_title=add_title
-        )
-        print("Done.")
+def _plot_energy_landscape(vha_plots: VHAPlots) -> None:
+    """Plot energy landscape (be aware: highly inefficient)."""
+    print("Plotting energy landscape...")
+    vha_plots.plot_energy_landscape(
+        alphas=np.linspace(-1 * 3, 2 * 3, 50),
+        betas=np.linspace(-1 * 9, 2 * 9, 50),
+        gammas=np.linspace(-1 * 21, 2 * 21, 50),
+    )
+    print("Done.")
 
-    if plot_energy_over_trotter_steps:
-        print("Plotting energy over Trotter steps...")
-        vha_plots.plot_energy_over_trotter_steps(
-            list_of_trotter_steps=list_of_trotter_steps,
-            threshold_gamma=np.linspace(1, 0, 5),
-            add_title=add_title,
-        )
-        print("Done.")
 
-    if plot_energy_over_truncation_threshold_and_trotter_steps:
-        print("Plotting energy over truncation threshold and Trotter steps...")
-        vha_plots.plot_energy_over_truncation_threshold_and_trotter_steps(
-            list_of_trotter_steps=list_of_trotter_steps,
-            list_of_threshold_gamma=thresholds_gamma,
-            max_evals=1000
-            if molecule_name in ("CH_2", "H_2")
-            else [trotter_steps * 1000 for trotter_steps in list_of_trotter_steps],
-            add_title=add_title,
-        )
-        vha_plots.plot_energy_over_truncation_threshold(
-            trotter_steps=list_of_trotter_steps,
-            list_of_threshold_gamma=thresholds_gamma,
-            max_evals=1000
-            if molecule_name in ("CH_2", "H_2")
-            else [trotter_steps * 1000 for trotter_steps in list_of_trotter_steps],
-            add_title=add_title,
-        )
-        print("Done.")
+def _plot_energy_over_threshold(
+    vha_plots: VHAPlots,
+    thresholds_gamma: Sequence[float],
+    add_title: bool,
+    list_of_trotter_steps: Sequence[float] | None = None,
+) -> None:
+    """Plot energy over truncation threshold."""
+    print("Plotting energy over truncation threshold...")
+    max_evals_config = (
+        1000
+        if vha_plots.molecule_name in ("CH_2", "H_2")
+        else [trotter_steps * 1000 for trotter_steps in list_of_trotter_steps]
+    )
+    vha_plots.plot_energy_over_truncation_threshold(
+        trotter_steps=list_of_trotter_steps,
+        list_of_threshold_gamma=thresholds_gamma,
+        max_evals=max_evals_config,
+        add_title=add_title,
+    )
+    print("Done.")
 
-    if plot_energy_over_noise:
-        options = {
-            "H_2": {
-                "list_of_cx_error_prob": (
-                    0,
-                    1e-6,
-                    2e-6,
-                    5e-6,
-                    1e-5,
-                    2e-5,
-                    5e-5,
-                    1e-4,
-                    2e-4,
-                    5e-4,
-                    1e-3,
-                ),
-                "trotter_steps": (1, 2, 5),
-                "threshold_gamma": (0.5, 1),
-                "max_evals": 10000,
-            },
-            "H_4": {
-                "list_of_cx_error_prob": (
-                    0,
-                    1e-6,
-                    2e-6,
-                    5e-6,
-                    1e-5,
-                    2e-5,
-                    5e-5,
-                    1e-4,
-                    2e-4,
-                    5e-4,
-                    1e-3,
-                ),
-                "trotter_steps": (1, 2, 5),
-                "threshold_gamma": (0.2, 0.5, 0.9, 1),
-                "max_evals": 5000,
-            },
-            "CH_2": {
-                "list_of_cx_error_prob": (
-                    0,
-                    1e-6,
-                    2e-6,
-                    5e-6,
-                    1e-5,
-                    2e-5,
-                    5e-5,
-                    1e-4,
-                    2e-4,
-                    5e-4,
-                    1e-3,
-                ),
-                "trotter_steps": (1, 2, 5),
-                "threshold_gamma": (0.2, 0.5, 0.9, 1),
-                "max_evals": 10000,
-            },
-            "LiH": {
-                "list_of_cx_error_prob": (0, 1e-5, 1e-4, 1e-3),
-                "trotter_steps": (1,),
-                "threshold_gamma": (0.5, 0.9),
-                "max_evals": 1000,
-                "skip_uccsdt": True,
-            },
-        }
-        print("Plotting energy over noise...")
-        vha_plots.plot_energy_over_noise(add_title=add_title, **options[molecule_name])
-        print("Done.")
 
-    if plot_error_estimate_over_truncation_threshold:
-        options = {
-            "H_2": {
-                "trotter_steps": 1,
-                "max_evals": 1000,
-            },
-            "CH_2": {
-                "trotter_steps": 1,
-                "max_evals": 1000,
-            },
-            "H_4": {
-                "trotter_steps": (1, 5),
-                "max_evals": (1000, 5000),
-            },
-            "LiH": {
-                "trotter_steps": (1, 5),
-                "max_evals": (1000, 5000),
-                "list_of_threshold_gamma": np.linspace(0, 1, 65),
-            },
-        }
-        print("Plotting error estimate over truncation threshold...")
-        vha_plots.plot_energy_over_truncation_threshold(
-            show_truncation_error_estimate=True,
-            show_hea=False,
-            show_uccsd=False,
-            show_uccsdt=False,
-            add_title=add_title,
-            **options[molecule_name],
-        )
-        print("Done.")
+def _plot_energy_over_trotter(
+    vha_plots: VHAPlots, list_of_trotter_steps: Sequence[float], add_title: bool
+) -> None:
+    """Plot energy over Trotter steps."""
+    print("Plotting energy over Trotter steps...")
+    vha_plots.plot_energy_over_trotter_steps(
+        list_of_trotter_steps=list_of_trotter_steps,
+        threshold_gamma=np.linspace(1, 0, 5),
+        add_title=add_title,
+    )
+    print("Done.")
 
-    if plot_parameter_count_over_ansatz:
-        print("Plotting number of parameters over ansatz...")
-        plot_parameter_count(
-            output_path=output_folder.parent,
-            problem=problem,
-            mapper=mapper,
-            molecule_names=("H_2", "H_4", "LiH"),
-            log_y=False,
-            add_title=add_title,
-        )
-        plot_parameter_count(
-            output_path=output_folder.parent,
-            problem=problem,
-            mapper=mapper,
-            molecule_names=("H_2", "H_4", "LiH"),
-            log_y=True,
-            add_title=add_title,
-        )
-        print("Done.")
+
+def _plot_energy_heatmap(
+    vha_plots: VHAPlots,
+    list_of_trotter_steps: Sequence[float],
+    thresholds_gamma: Sequence[float],
+    add_title: bool,
+) -> None:
+    """Plot energy heatmap."""
+    print("Plotting energy over truncation threshold and Trotter steps...")
+    max_evals_config = (
+        1000
+        if vha_plots.molecule_name in ("CH_2", "H_2")
+        else [trotter_steps * 1000 for trotter_steps in list_of_trotter_steps]
+    )
+    vha_plots.plot_energy_over_truncation_threshold_and_trotter_steps(
+        list_of_trotter_steps=list_of_trotter_steps,
+        list_of_threshold_gamma=thresholds_gamma,
+        max_evals=max_evals_config,
+        add_title=add_title,
+    )
+    print("Done.")
+
+
+def _plot_energy_over_noise(vha_plots: VHAPlots, molecule_name: str, add_title: bool) -> None:
+    """Plot energy over noise levels."""
+    print("Plotting energy over noise...")
+    options = {
+        "H_2": {
+            "list_of_cx_error_prob": (
+                0,
+                1e-6,
+                2e-6,
+                5e-6,
+                1e-5,
+                2e-5,
+                5e-5,
+                1e-4,
+                2e-4,
+                5e-4,
+                1e-3,
+            ),
+            "trotter_steps": (1, 2, 5),
+            "threshold_gamma": (0.5, 1),
+            "max_evals": 10000,
+        },
+        "H_4": {
+            "list_of_cx_error_prob": (
+                0,
+                1e-6,
+                2e-6,
+                5e-6,
+                1e-5,
+                2e-5,
+                5e-5,
+                1e-4,
+                2e-4,
+                5e-4,
+                1e-3,
+            ),
+            "trotter_steps": (1, 2, 5),
+            "threshold_gamma": (0.2, 0.5, 0.9, 1),
+            "max_evals": 5000,
+        },
+        "CH_2": {
+            "list_of_cx_error_prob": (
+                0,
+                1e-6,
+                2e-6,
+                5e-6,
+                1e-5,
+                2e-5,
+                5e-5,
+                1e-4,
+                2e-4,
+                5e-4,
+                1e-3,
+            ),
+            "trotter_steps": (1, 2, 5),
+            "threshold_gamma": (0.2, 0.5, 0.9, 1),
+            "max_evals": 10000,
+        },
+        "LiH": {
+            "list_of_cx_error_prob": (0, 1e-5, 1e-4, 1e-3),
+            "trotter_steps": (1,),
+            "threshold_gamma": (0.5, 0.9),
+            "max_evals": 1000,
+            "skip_uccsdt": True,
+        },
+    }
+    vha_plots.plot_energy_over_noise(add_title=add_title, **options[molecule_name])
+    print("Done.")
+
+
+def _plot_error_estimate(vha_plots: VHAPlots, molecule_name: str, add_title: bool) -> None:
+    """Plot error estimate over truncation threshold."""
+    print("Plotting error estimate over truncation threshold...")
+    options = {
+        "H_2": {"trotter_steps": 1, "max_evals": 1000},
+        "CH_2": {"trotter_steps": 1, "max_evals": 1000},
+        "H_4": {"trotter_steps": (1, 5), "max_evals": (1000, 5000)},
+        "LiH": {
+            "trotter_steps": (1, 5),
+            "max_evals": (1000, 5000),
+            "list_of_threshold_gamma": np.linspace(0, 1, 65),
+        },
+    }
+    vha_plots.plot_energy_over_truncation_threshold(
+        show_truncation_error_estimate=True,
+        show_hea=False,
+        show_uccsd=False,
+        show_uccsdt=False,
+        add_title=add_title,
+        **options[molecule_name],
+    )
+    print("Done.")
+
+
+def _plot_parameter_count(
+    problem: ElectronicStructureProblem,
+    mapper: FermionicMapper,
+    output_path: Path,
+    add_title: bool,
+) -> None:
+    """Plot parameter count over ansätze."""
+    print("Plotting number of parameters over ansatz...")
+    plot_parameter_count(
+        output_path=output_path,
+        problem=problem,
+        mapper=mapper,
+        molecule_names=("H_2", "H_4", "LiH"),
+        log_y=False,
+        add_title=add_title,
+    )
+    plot_parameter_count(
+        output_path=output_path,
+        problem=problem,
+        mapper=mapper,
+        molecule_names=("H_2", "H_4", "LiH"),
+        log_y=True,
+        add_title=add_title,
+    )
+    print("Done.")
 
 
 if __name__ == "__main__":
