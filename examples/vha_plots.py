@@ -961,10 +961,6 @@ class VHAPlots(ComputationFileCache):
         for idx, (trotter_steps, max_evals) in enumerate(
             zip(list_of_trotter_steps, list_of_max_evals, strict=True)
         ):
-            if trotter_steps == 1:
-                label = f"tVHA ({trotter_steps} Trotter step)"
-            else:
-                label = f"tVHA ({trotter_steps} Trotter steps)"
             energies = energy_data[
                 (energy_data["ansatz_name"] == "tVHA")
                 & (energy_data["trotter_steps"] == trotter_steps)
@@ -973,7 +969,7 @@ class VHAPlots(ComputationFileCache):
             plt.plot(
                 list_of_threshold_gamma,
                 energies,
-                label=label,
+                label=f"tVHA ({trotter_steps} Trotter step{'' if len(list_of_trotter_steps) == 1 else 's'})",
                 marker=["d", "o", "X", "+", "x"][idx % len(list_of_trotter_steps)],
                 linestyle="dotted",
                 linewidth=0.8,
@@ -1027,7 +1023,6 @@ class VHAPlots(ComputationFileCache):
                         for e_disc, e in zip(energies_discarded_part, energies, strict=True)
                     ],
                     y2=energies,
-                    label="error estimate (evaluation of discarded part)",
                     color=colors_tvha[idx % len(list_of_trotter_steps)],
                     alpha=0.4,
                 )
@@ -1223,7 +1218,7 @@ class VHAPlots(ComputationFileCache):
         filename = (
             f"{self.molecule_name}_energy_over_truncation_threshold_"
             f"{'error_estimate_' if show_truncation_error_estimate else ''}"
-            f"{'_'.join(str(trotter_steps) for trotter_steps in list_of_trotter_steps)}.svg"
+            f"{'_'.join(str(trotter_steps) + '-' + str(max_evals) for trotter_steps, max_evals in zip(list_of_trotter_steps, list_of_max_evals, strict=True))}.svg"
         )
         plt.savefig(self.output_path.joinpath(filename), format="svg")
         plt.close()
@@ -1826,7 +1821,8 @@ class VHAPlots(ComputationFileCache):
                 plt.plot(
                     list_of_cx_error_prob,
                     energies,
-                    label=f"tVHA γ={threshold_gamma:.3g} ({trotter_steps} Trotter steps)",  # noqa: RUF001
+                    label=f"tVHA γ={threshold_gamma:.3g} "  # noqa: RUF001
+                    f"({trotter_steps} Trotter step{'' if len(list_of_trotter_steps) == 1 else 's'})",
                     marker=["d", "o", "X", "+", "x"][id_trotter % len(list_of_trotter_steps)],
                     linestyle="dotted",
                     color=color_circle[id_gamma % len(list_of_threshold_gamma)],
