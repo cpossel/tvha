@@ -2327,10 +2327,10 @@ def main() -> None:
         _plot_energy_heatmap(vha_plots, list_of_trotter_steps, thresholds_gamma, add_title)
 
     if plot_options["energy_over_noise"]:
-        _plot_energy_over_noise(vha_plots, molecule_name, add_title)
+        _plot_energy_over_noise(vha_plots, add_title)
 
     if plot_options["error_estimate"]:
-        _plot_error_estimate(vha_plots, molecule_name, add_title)
+        _plot_error_estimate(vha_plots, list_of_trotter_steps, add_title)
 
     if plot_options["parameter_count"]:
         _plot_parameter_count(problem, mapper, output_folder.parent, add_title)
@@ -2344,9 +2344,9 @@ def _print_debug_info(vha_plots: VHAPlots, problem: ElectronicStructureProblem) 
 
     if len(optimal_parameters) == 3:
         optimal_parameters_string = (
-            f"α={optimal_parameters[0]:.5g}, "
+            f"α={optimal_parameters[0]:.5g}, "  # noqa: RUF001
             f"β={optimal_parameters[1]:.5g}, "
-            f"γ={optimal_parameters[2]:.5g}"
+            f"γ={optimal_parameters[2]:.5g}"  # noqa: RUF001
         )
     else:
         optimal_parameters_string = str(optimal_parameters)
@@ -2473,7 +2473,7 @@ def _plot_energy_heatmap(
     print("Done.")
 
 
-def _plot_energy_over_noise(vha_plots: VHAPlots, molecule_name: str, add_title: bool) -> None:
+def _plot_energy_over_noise(vha_plots: VHAPlots, add_title: bool) -> None:
     """Plot energy over noise levels."""
     print("Plotting energy over noise...")
     options = {
@@ -2539,30 +2539,32 @@ def _plot_energy_over_noise(vha_plots: VHAPlots, molecule_name: str, add_title: 
             "skip_uccsdt": True,
         },
     }
-    vha_plots.plot_energy_over_noise(add_title=add_title, **options[molecule_name])
+    vha_plots.plot_energy_over_noise(add_title=add_title, **options[vha_plots.molecule_name])
     print("Done.")
 
 
-def _plot_error_estimate(vha_plots: VHAPlots, molecule_name: str, add_title: bool) -> None:
+def _plot_error_estimate(
+    vha_plots: VHAPlots, list_of_trotter_steps: Sequence[int], add_title: bool
+) -> None:
     """Plot error estimate over truncation threshold."""
     print("Plotting error estimate over truncation threshold...")
     options = {
         "H_2": {"trotter_steps": 1, "max_evals": 1000},
         "CH_2": {"trotter_steps": 1, "max_evals": 1000},
-        "H_4": {"trotter_steps": (1, 5), "max_evals": (1000, 5000)},
+        "H_4": {
+            "trotter_steps": list_of_trotter_steps,
+            "max_evals": [1000 * s for s in list_of_trotter_steps],
+        },
         "LiH": {
-            "trotter_steps": (1, 5),
-            "max_evals": (1000, 5000),
+            "trotter_steps": list_of_trotter_steps,
+            "max_evals": [1000 * s for s in list_of_trotter_steps],
             "list_of_threshold_gamma": np.linspace(0, 1, 65),
         },
     }
     vha_plots.plot_energy_over_truncation_threshold(
         show_truncation_error_estimate=True,
-        show_hea=False,
-        show_uccsd=False,
-        show_uccsdt=False,
         add_title=add_title,
-        **options[molecule_name],
+        **options[vha_plots.molecule_name],
     )
     print("Done.")
 
