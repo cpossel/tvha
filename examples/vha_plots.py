@@ -2301,39 +2301,52 @@ def main() -> None:
     # --- GENERATE PLOTS --------------------------------------------------------------------------
 
     if plot_options["histograms"]:
-        _plot_histograms(vha_plots, vha.hamilton_operator, add_title)
+        _plot_histograms(vha_plots, hamiltonian=vha.hamilton_operator, add_title=add_title)
 
     if plot_options["density_distributions"]:
-        _plot_density_distributions(vha_plots, vha.hamilton_operator, add_title)
+        _plot_density_distributions(
+            vha_plots, hamiltonian=vha.hamilton_operator, add_title=add_title
+        )
 
     if plot_options["cnot_count"]:
-        _plot_cnot_count(vha_plots, add_title)
+        _plot_cnot_count(vha_plots, add_title=add_title)
 
     if plot_options["circuit_depth"]:
-        _plot_circuit_depth(vha_plots, add_title)
+        _plot_circuit_depth(vha_plots, add_title=add_title)
 
     if plot_options["energy_landscape"]:
         _plot_energy_landscape(vha_plots)
 
     if plot_options["energy_over_threshold"]:
         _plot_energy_over_threshold(
-            vha_plots, thresholds_gamma, add_title, list_of_trotter_steps=list_of_trotter_steps
+            vha_plots, list_of_trotter_steps=list_of_trotter_steps, add_title=add_title
         )
 
     if plot_options["energy_over_trotter"]:
-        _plot_energy_over_trotter(vha_plots, list_of_trotter_steps, add_title)
+        _plot_energy_over_trotter(
+            vha_plots, list_of_trotter_steps=list_of_trotter_steps, add_title=add_title
+        )
 
     if plot_options["energy_heatmap"]:
-        _plot_energy_heatmap(vha_plots, list_of_trotter_steps, thresholds_gamma, add_title)
+        _plot_energy_heatmap(
+            vha_plots,
+            list_of_trotter_steps=list_of_trotter_steps,
+            list_of_threshold_gamma=thresholds_gamma,
+            add_title=add_title,
+        )
 
     if plot_options["energy_over_noise"]:
-        _plot_energy_over_noise(vha_plots, add_title)
+        _plot_energy_over_noise(vha_plots, add_title=add_title)
 
     if plot_options["error_estimate"]:
-        _plot_error_estimate(vha_plots, list_of_trotter_steps, add_title)
+        _plot_error_estimate(
+            vha_plots, list_of_trotter_steps=list_of_trotter_steps, add_title=add_title
+        )
 
     if plot_options["parameter_count"]:
-        _plot_parameter_count(problem, mapper, output_folder.parent, add_title)
+        _plot_parameter_count(
+            problem=problem, mapper=mapper, output_path=output_folder.parent, add_title=add_title
+        )
 
 
 def _print_debug_info(vha_plots: VHAPlots, problem: ElectronicStructureProblem) -> None:
@@ -2418,22 +2431,27 @@ def _plot_energy_landscape(vha_plots: VHAPlots) -> None:
 
 def _plot_energy_over_threshold(
     vha_plots: VHAPlots,
-    thresholds_gamma: Sequence[float],
     add_title: bool,
     list_of_trotter_steps: Sequence[float] | None = None,
 ) -> None:
     """Plot energy over truncation threshold."""
     print("Plotting energy over truncation threshold...")
-    max_evals_config = (
-        1000
-        if vha_plots.molecule_name in ("CH_2", "H_2")
-        else [trotter_steps * 1000 for trotter_steps in list_of_trotter_steps]
-    )
+    options = {
+        "H_2": {"trotter_steps": 1, "max_evals": 1000},
+        "CH_2": {"trotter_steps": 1, "max_evals": 1000},
+        "H_4": {
+            "trotter_steps": list_of_trotter_steps,
+            "max_evals": [1000 * s for s in list_of_trotter_steps],
+        },
+        "LiH": {
+            "trotter_steps": list_of_trotter_steps,
+            "max_evals": [1000 * s for s in list_of_trotter_steps],
+            "list_of_threshold_gamma": np.linspace(0, 1, 65),
+        },
+    }
     vha_plots.plot_energy_over_truncation_threshold(
-        trotter_steps=list_of_trotter_steps,
-        list_of_threshold_gamma=thresholds_gamma,
-        max_evals=max_evals_config,
         add_title=add_title,
+        **options[vha_plots.molecule_name],
     )
     print("Done.")
 
@@ -2454,7 +2472,7 @@ def _plot_energy_over_trotter(
 def _plot_energy_heatmap(
     vha_plots: VHAPlots,
     list_of_trotter_steps: Sequence[float],
-    thresholds_gamma: Sequence[float],
+    list_of_threshold_gamma: Sequence[float],
     add_title: bool,
 ) -> None:
     """Plot energy heatmap."""
@@ -2466,7 +2484,7 @@ def _plot_energy_heatmap(
     )
     vha_plots.plot_energy_over_truncation_threshold_and_trotter_steps(
         list_of_trotter_steps=list_of_trotter_steps,
-        list_of_threshold_gamma=thresholds_gamma,
+        list_of_threshold_gamma=list_of_threshold_gamma,
         max_evals=max_evals_config,
         add_title=add_title,
     )
