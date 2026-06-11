@@ -2253,21 +2253,21 @@ def main() -> None:
     # 5 for H_2, 141 for H_4, 529 for LiH, 13 for CH_2, 43 for NO_3, 13 for CH
 
     # Plot configuration: Set to True/False to enable/disable specific plots
-    PLOT_HISTOGRAMS = True
-    PLOT_DENSITY_DISTRIBUTIONS = False
-    PLOT_CNOT_COUNT = False
-    PLOT_CIRCUIT_DEPTH = False
-    PLOT_ENERGY_OVER_THRESHOLD = False
-    PLOT_ENERGY_OVER_TROTTER = False
-    PLOT_ENERGY_HEATMAP = False
-    PLOT_ENERGY_OVER_NOISE = False
-    PLOT_ERROR_ESTIMATE = False
-    PLOT_PARAMETER_COUNT = False
-    PLOT_ENERGY_LANDSCAPE = False  # Enable carefully: highly inefficient
+    plot_histograms = False
+    plot_density_distributions = False
+    plot_cnot_count = False
+    plot_circuit_depth = False
+    plot_energy_over_threshold = True
+    plot_energy_over_trotter = False
+    plot_energy_heatmap = False
+    plot_energy_over_noise = False
+    plot_error_estimate = False
+    plot_parameter_count = False
+    plot_energy_landscape = False  # Enable carefully: highly inefficient
 
     add_title = False
 
-    SETTINGS = {
+    settings = {
         "H_2": {
             "energy_over_trotter": {"threshold_gamma": np.linspace(1, 0, 5)},
             "energy_over_noise": {
@@ -2312,7 +2312,7 @@ def main() -> None:
         },
         "H_4": {
             "energy_over_threshold": {
-                "list_of_trotter_steps": (1, 2, 5),
+                "trotter_steps": (1, 2, 5),
                 "max_evals": (1000, 2000, 5000),
             },
             "energy_over_trotter": {"threshold_gamma": np.linspace(1, 0, 5)},
@@ -2345,7 +2345,7 @@ def main() -> None:
         },
         "LiH": {
             "energy_over_threshold": {
-                "list_of_trotter_steps": (1, 2, 5),
+                "trotter_steps": (1, 2, 5),
                 "max_evals": (1000, 2000, 5000),
                 "list_of_threshold_gamma": np.linspace(0, 1, 65),
             },
@@ -2398,59 +2398,59 @@ def main() -> None:
     # ---------------------------------------------------------------------------------------------
     # --- GENERATE PLOTS --------------------------------------------------------------------------
 
-    if PLOT_HISTOGRAMS:
+    if plot_histograms:
         _plot_histograms(vha_plots, hamiltonian=vha.hamilton_operator, add_title=add_title)
 
-    if PLOT_DENSITY_DISTRIBUTIONS:
+    if plot_density_distributions:
         _plot_density_distributions(
             vha_plots, hamiltonian=vha.hamilton_operator, add_title=add_title
         )
 
-    if PLOT_CNOT_COUNT:
+    if plot_cnot_count:
         _plot_cnot_count(vha_plots, add_title=add_title)
 
-    if PLOT_CIRCUIT_DEPTH:
+    if plot_circuit_depth:
         _plot_circuit_depth(vha_plots, add_title=add_title)
 
-    if PLOT_ENERGY_LANDSCAPE:
+    if plot_energy_landscape:
         _plot_energy_landscape(vha_plots)
 
-    if PLOT_ENERGY_OVER_THRESHOLD:
+    if plot_energy_over_threshold:
         _plot_energy_over_threshold(
             vha_plots,
             add_title=add_title,
-            **SETTINGS.get(vha_plots.molecule_name, {}).get("energy_over_threshold", {}),
+            **settings.get(vha_plots.molecule_name, {}).get("energy_over_threshold", {}),
         )
 
-    if PLOT_ENERGY_OVER_TROTTER:
+    if plot_energy_over_trotter:
         _plot_energy_over_trotter(
             vha_plots,
             add_title=add_title,
-            **SETTINGS.get(vha_plots.molecule_name, {}).get("energy_over_trotter", {}),
+            **settings.get(vha_plots.molecule_name, {}).get("energy_over_trotter", {}),
         )
 
-    if PLOT_ENERGY_HEATMAP:
+    if plot_energy_heatmap:
         _plot_energy_heatmap(
             vha_plots,
             add_title=add_title,
-            **SETTINGS.get(vha_plots.molecule_name, {}).get("energy_heatmap", {}),
+            **settings.get(vha_plots.molecule_name, {}).get("energy_heatmap", {}),
         )
 
-    if PLOT_ENERGY_OVER_NOISE:
+    if plot_energy_over_noise:
         _plot_energy_over_noise(
             vha_plots,
             add_title=add_title,
-            **SETTINGS.get(vha_plots.molecule_name, {}).get("energy_over_noise", {}),
+            **settings.get(vha_plots.molecule_name, {}).get("energy_over_noise", {}),
         )
 
-    if PLOT_ERROR_ESTIMATE:
+    if plot_error_estimate:
         _plot_error_estimate(
             vha_plots,
             add_title=add_title,
-            **SETTINGS.get(vha_plots.molecule_name, {}).get("error_estimate", {}),
+            **settings.get(vha_plots.molecule_name, {}).get("error_estimate", {}),
         )
 
-    if PLOT_PARAMETER_COUNT:
+    if plot_parameter_count:
         _plot_parameter_count(
             problem=problem, mapper=mapper, output_path=output_folder.parent, add_title=add_title
         )
@@ -2539,28 +2539,28 @@ def _plot_energy_landscape(vha_plots: VHAPlots) -> None:
 def _plot_energy_over_threshold(vha_plots: VHAPlots, add_title: bool = True, **kwargs) -> None:
     """Plot energy over truncation threshold."""
     print("Plotting energy over truncation threshold...")
-    vha_plots.plot_energy_over_truncation_threshold(kwargs, add_title=add_title)
+    vha_plots.plot_energy_over_truncation_threshold(add_title=add_title, **kwargs)
     print("Done.")
 
 
 def _plot_energy_over_trotter(vha_plots: VHAPlots, add_title: bool = True, **kwargs) -> None:
     """Plot energy over Trotter steps."""
     print("Plotting energy over Trotter steps...")
-    vha_plots.plot_energy_over_trotter_steps(kwargs, add_title=add_title)
+    vha_plots.plot_energy_over_trotter_steps(add_title=add_title, **kwargs)
     print("Done.")
 
 
 def _plot_energy_heatmap(vha_plots: VHAPlots, add_title: bool = True, **kwargs) -> None:
     """Plot energy heatmap."""
     print("Plotting energy over truncation threshold and Trotter steps...")
-    vha_plots.plot_energy_heatmap(kwargs, add_title=add_title)
+    vha_plots.plot_energy_heatmap(add_title=add_title, **kwargs)
     print("Done.")
 
 
 def _plot_energy_over_noise(vha_plots: VHAPlots, add_title: bool = True, **kwargs) -> None:
     """Plot energy over noise levels."""
     print("Plotting energy over noise...")
-    vha_plots.plot_energy_over_noise(kwargs, add_title=add_title)
+    vha_plots.plot_energy_over_noise(add_title=add_title, **kwargs)
     print("Done.")
 
 
@@ -2568,7 +2568,7 @@ def _plot_error_estimate(vha_plots: VHAPlots, add_title: bool = True, **kwargs) 
     """Plot error estimate over truncation threshold."""
     print("Plotting error estimate over truncation threshold...")
     vha_plots.plot_energy_over_truncation_threshold(
-        kwargs, show_truncation_error_estimate=True, add_title=add_title
+        show_truncation_error_estimate=True, add_title=add_title, **kwargs
     )
     print("Done.")
 
