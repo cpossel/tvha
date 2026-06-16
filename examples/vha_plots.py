@@ -1885,7 +1885,8 @@ class VHAPlots(ComputationFileCache):
             energy_fci - (energy_hf - energy_fci) * 0.05,
             energy_hf + (energy_hf - energy_fci) * 0.05,
         )
-        plt.xscale("log")
+        linthresh = min((x for x in list_of_cx_error_prob if x > 0), default=1e-7)
+        plt.xscale("symlog", linthresh=linthresh)
         xmin, xmax = plt.xlim()
 
         # HF energy
@@ -1919,7 +1920,9 @@ class VHAPlots(ComputationFileCache):
             zorder=0,
         )
 
-        plt.xlim(xmin, xmax)
+        ticks, _ = plt.xticks()
+        plt.xticks(ticks=[0, *ticks] if 0 not in ticks else ticks)
+        plt.xlim(0, xmax)
 
         plt.legend()
         plt.xlabel("CNOT depolarization error probability")
