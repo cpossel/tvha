@@ -2386,7 +2386,11 @@ def main() -> None:
     thresholds_gamma = thresholds_gamma or vha.possible_thresholds_gamma
 
     vha_plots = VHAPlots(
-        output_path=output_folder, molecule_name=molecule_name, problem=problem, mapper=mapper
+        output_path=output_folder,
+        molecule_name=molecule_name,
+        problem=problem,
+        mapper=mapper,
+        force_sequential=True,
     )
 
     # All energies are given as electronic energies without the nuclear repulsion energy
