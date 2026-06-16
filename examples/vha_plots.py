@@ -2356,6 +2356,7 @@ def main() -> None:
                 "list_of_threshold_gamma": np.linspace(0, 1, 65),
             },
             "energy_over_noise": {
+                "list_of_cx_error_prob": (0, 1e-5, 1e-4, 1e-3),
                 "trotter_steps": (1,),
                 "threshold_gamma": (0.5, 0.9),
                 "skip_uccsdt": True,
