@@ -16,6 +16,7 @@ dependencies = [
     "pandas>=3.0",
     "pyjson5>=1.6",
     "pyscf>=2.9;sys_platform=='linux'",
+    "pyyaml",
     "qiskit>=1.4,<2",
     "qiskit_algorithms>=0.3.1",
     # "qiskit_machine_learning>=0.9", # not compatible with qiskit<2

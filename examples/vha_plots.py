@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import qiskit_aer.noise as noise
+import yaml
 from computation_cache.computation_file_cache import ComputationFileCache
 from matplotlib.ticker import MaxNLocator
 from pyscf import gto, scf
@@ -2238,157 +2239,37 @@ def main() -> None:
     """Main function to create the plots."""
     # ---------------------------------------------------------------------------------------------
     # --- SETTINGS --------------------------------------------------------------------------------
-    molecule_name = "H_2"
+    # molecule_name = "H_2"
     # molecule_name = "H_4"
-    # molecule_name = "LiH"
+    molecule_name = "LiH"
     # molecule_name = "CH_2"
     # molecule_name = "NO_3" # more complex due to non-diagonal fock operator
     # molecule_name = "CH" # HF is already within chemical accuracy
 
-    basis_set = "sto3g" if molecule_name in ("H_2", "H_4", "LiH") else "def2-svp"
-
     mapper = JordanWignerMapper()
 
-    # Truncation thresholds: None for all possible thresholds, or specify a sequence
-    thresholds_gamma = None
+    config_path = Path("vha_plots_config.yaml")
 
-    # Info: number of datapoints (i.e. non-Coulomb two-body terms + 1):
-    # 5 for H_2, 141 for H_4, 529 for LiH, 13 for CH_2, 43 for NO_3, 13 for CH
-
-    # Plot configuration: Set to True/False to enable/disable specific plots
-    plot_histograms = False
-    plot_density_distributions = False
-    plot_cnot_count = False
-    plot_circuit_depth = False
-    plot_energy_over_threshold = True
-    plot_energy_over_trotter = False
-    plot_energy_heatmap = False
-    plot_energy_over_noise = False
-    plot_error_estimate = False
-    plot_parameter_count = False
-    plot_energy_landscape = False  # Enable carefully: highly inefficient
-
-    add_title = False
-
-    settings = {
-        "H_2": {
-            "energy_over_trotter": {"threshold_gamma": np.linspace(1, 0, 5)},
-            "energy_over_noise": {
-                "list_of_cx_error_prob": (
-                    0,
-                    1e-6,
-                    2e-6,
-                    5e-6,
-                    1e-5,
-                    2e-5,
-                    5e-5,
-                    1e-4,
-                    2e-4,
-                    5e-4,
-                    1e-3,
-                ),
-                "trotter_steps": (1, 2, 5),
-                "threshold_gamma": (0.5, 1),
-                "max_evals": 10000,
-            },
-        },
-        "CH_2": {
-            "energy_over_trotter": {"threshold_gamma": np.linspace(1, 0, 5)},
-            "energy_over_noise": {
-                "list_of_cx_error_prob": (
-                    0,
-                    1e-6,
-                    2e-6,
-                    5e-6,
-                    1e-5,
-                    2e-5,
-                    5e-5,
-                    1e-4,
-                    2e-4,
-                    5e-4,
-                    1e-3,
-                ),
-                "trotter_steps": (1, 2, 5),
-                "max_evals": 10000,
-                "threshold_gamma": (0.2, 0.5, 0.9, 1),
-            },
-        },
-        "H_4": {
-            "energy_over_threshold": {
-                "trotter_steps": (1, 2, 5),
-                "max_evals": (1000, 2000, 5000),
-            },
-            "energy_over_trotter": {"threshold_gamma": np.linspace(1, 0, 5)},
-            "energy_heatmap": {
-                "list_of_trotter_steps": (1, 2, 3, 4, 5),
-                "max_evals": (1000, 2000, 3000, 4000, 5000),
-            },
-            "energy_over_noise": {
-                "list_of_cx_error_prob": (
-                    0,
-                    1e-6,
-                    2e-6,
-                    5e-6,
-                    1e-5,
-                    2e-5,
-                    5e-5,
-                    1e-4,
-                    2e-4,
-                    5e-4,
-                    1e-3,
-                ),
-                "trotter_steps": (1, 2, 5),
-                "max_evals": 5000,
-                "threshold_gamma": (0.2, 0.5, 0.9, 1),
-            },
-            "error_estimate": {
-                "trotter_steps": (1, 2, 5),
-                "max_evals": (1000, 2000, 5000),
-            },
-        },
-        "LiH": {
-            "energy_over_threshold": {
-                "trotter_steps": (1, 2, 5),
-                "max_evals": (1000, 2000, 5000),
-                "list_of_threshold_gamma": np.linspace(0, 1, 65),
-            },
-            "energy_over_trotter": {"threshold_gamma": np.linspace(1, 0, 5)},
-            "energy_heatmap": {
-                "list_of_trotter_steps": (1, 2, 3, 4, 5),
-                "max_evals": (1000, 2000, 3000, 4000, 5000),
-                "list_of_threshold_gamma": np.linspace(0, 1, 65),
-            },
-            "energy_over_noise": {
-                "list_of_cx_error_prob": (
-                    0,
-                    1e-7,
-                    2e-7,
-                    5e-7,
-                    1e-6,
-                    2e-6,
-                    5e-6,
-                    1e-5,
-                    2e-5,
-                    5e-5,
-                    1e-4,
-                ),
-                "trotter_steps": (1, 2),
-                "threshold_gamma": (0.2, 0.5, 0.9),
-                "skip_uccsdt": True,
-            },
-            "error_estimate": {
-                "trotter_steps": (1, 2, 5),
-                "max_evals": (1000, 2000, 5000),
-                "list_of_threshold_gamma": np.linspace(0, 1, 65),
-            },
-        },
-    }
     # ---------------------------------------------------------------------------------------------
+    # Load configuration
+    with config_path.open("r") as f:
+        config = yaml.safe_load(f)
 
-    output_folder = (
-        Path(__file__)
-        .parent.joinpath("data_for_paper_tvha")
-        .joinpath(f"plots_{molecule_name.replace('_', '')}")
+    # Get global plotting settings
+    plotting_config = config["plotting"]
+
+    # Get molecule-specific settings
+    molecules_config = config["molecules"]
+    molecule_plots_config = molecules_config.get(molecule_name, {})
+
+    # Get basis_set with fallback to "def2-svp"
+    basis_set = molecule_plots_config.get("basis_set", "def2-svp")
+
+    # Create output folder
+    output_dir_template = plotting_config.get("output_dir_template", "plots/plots_{molecule}")
+
+    output_folder = Path(__file__).parent.joinpath(
+        output_dir_template.format(molecule=molecule_name.replace("_", ""))
     )
     output_folder.mkdir(exist_ok=True)
 
@@ -2397,9 +2278,6 @@ def main() -> None:
     )
 
     vha = VariationalHamiltonianAnsatz(problem=problem, trotter_steps=1, mapper=mapper)
-
-    # Determine actual thresholds to use
-    thresholds_gamma = thresholds_gamma or vha.possible_thresholds_gamma
 
     vha_plots = VHAPlots(
         output_path=output_folder,
@@ -2415,62 +2293,69 @@ def main() -> None:
     if logger.getEffectiveLevel() <= logging.DEBUG:
         _print_debug_info(vha_plots, problem)
 
+    add_title = plotting_config.get("add_title", False)
+
     # ---------------------------------------------------------------------------------------------
     # --- GENERATE PLOTS --------------------------------------------------------------------------
 
-    if plot_histograms:
+    if plotting_config.get("plot_histograms", False):
         _plot_histograms(vha_plots, hamiltonian=vha.hamilton_operator, add_title=add_title)
 
-    if plot_density_distributions:
+    if plotting_config.get("plot_density_distributions", False):
         _plot_density_distributions(
             vha_plots, hamiltonian=vha.hamilton_operator, add_title=add_title
         )
 
-    if plot_cnot_count:
+    if plotting_config.get("plot_cnot_count", False):
         _plot_cnot_count(vha_plots, add_title=add_title)
 
-    if plot_circuit_depth:
+    if plotting_config.get("plot_circuit_depth", False):
         _plot_circuit_depth(vha_plots, add_title=add_title)
 
-    if plot_energy_landscape:
+    if plotting_config.get("plot_energy_landscape", False):
         _plot_energy_landscape(vha_plots)
 
-    if plot_energy_over_threshold:
+    if plotting_config.get("plot_energy_over_threshold", False):
+        plot_config = molecule_plots_config.get("plot_energy_over_threshold", {})
         _plot_energy_over_threshold(
             vha_plots,
             add_title=add_title,
-            **settings.get(vha_plots.molecule_name, {}).get("energy_over_threshold", {}),
+            **plot_config,
         )
 
-    if plot_energy_over_trotter:
+    if plotting_config.get("plot_energy_over_trotter", False):
+        plot_config = molecule_plots_config.get("plot_energy_over_trotter", {})
         _plot_energy_over_trotter(
             vha_plots,
             add_title=add_title,
-            **settings.get(vha_plots.molecule_name, {}).get("energy_over_trotter", {}),
+            **plot_config,
         )
 
-    if plot_energy_heatmap:
+    if plotting_config.get("plot_energy_heatmap", False):
+        plot_config = molecule_plots_config.get("plot_energy_heatmap", {})
         _plot_energy_heatmap(
             vha_plots,
             add_title=add_title,
-            **settings.get(vha_plots.molecule_name, {}).get("energy_heatmap", {}),
+            **plot_config,
         )
 
-    if plot_energy_over_noise:
+    if plotting_config.get("plot_energy_over_noise", False):
+        plot_config = molecule_plots_config.get("plot_energy_over_noise", {})
         _plot_energy_over_noise(
             vha_plots,
             add_title=add_title,
-            **settings.get(vha_plots.molecule_name, {}).get("energy_over_noise", {}),
+            **plot_config,
         )
 
-    if plot_error_estimate:
+    if plotting_config.get("plot_error_estimate", False):
+        plot_config = molecule_plots_config.get("plot_error_estimate", {})
         _plot_error_estimate(
             vha_plots,
             add_title=add_title,
-            **settings.get(vha_plots.molecule_name, {}).get("error_estimate", {}),
+            **plot_config,
         )
 
-    if plot_parameter_count:
+    if plotting_config.get("plot_parameter_count", False):
         _plot_parameter_count(
             problem=problem, mapper=mapper, output_path=output_folder.parent, add_title=add_title
         )
