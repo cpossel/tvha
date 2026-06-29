@@ -15,7 +15,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import qiskit_aer.noise as noise
-import yaml
 from computation_cache.computation_file_cache import ComputationFileCache
 from matplotlib.ticker import MaxNLocator
 from pyscf import gto, scf
@@ -33,6 +32,7 @@ from qiskit_nature.second_q.mappers import JordanWignerMapper
 from qiskit_nature.second_q.mappers.fermionic_mapper import FermionicMapper
 from qiskit_nature.second_q.problems import ElectronicStructureProblem
 from qiskit_nature.second_q.transformers import ActiveSpaceTransformer
+from ruamel.yaml import YAML
 from tqdm import tqdm
 
 from tvha.efficientsu2_hartreefock import EfficientSU2_HartreeFock
@@ -2248,12 +2248,13 @@ def main() -> None:
 
     mapper = JordanWignerMapper()
 
-    config_path = Path("vha_plots_config.yaml")
+    config_path = Path(__file__).parent.joinpath("vha_plots_config.yaml")
 
     # ---------------------------------------------------------------------------------------------
     # Load configuration
+    yaml = YAML(typ="safe")
     with config_path.open("r") as f:
-        config = yaml.safe_load(f)
+        config = yaml.load(f)
 
     # Get global plotting settings
     plotting_config = config["plotting"]
