@@ -970,7 +970,7 @@ class VHAPlots(ComputationFileCache):
             plt.plot(
                 list_of_threshold_gamma,
                 energies,
-                label=f"tVHA ({trotter_steps} Trotter step{'' if len(list_of_trotter_steps) == 1 else 's'})",
+                label=f"tVHA ({trotter_steps} Trotter step{'' if trotter_steps == 1 else 's'})",
                 marker=["d", "o", "X", "+", "x"][idx % len(list_of_trotter_steps)],
                 linestyle="dotted",
                 linewidth=0.8,
