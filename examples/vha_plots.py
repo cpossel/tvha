@@ -1823,7 +1823,7 @@ class VHAPlots(ComputationFileCache):
                     list_of_cx_error_prob,
                     energies,
                     label=f"tVHA γ={threshold_gamma:.3g} "  # noqa: RUF001
-                    f"({trotter_steps} Trotter step{'' if len(list_of_trotter_steps) == 1 else 's'})",
+                    f"({trotter_steps} Trotter step{'' if trotter_steps == 1 else 's'})",
                     marker=["d", "o", "X", "+", "x"][id_trotter % len(list_of_trotter_steps)],
                     linestyle="dotted",
                     color=color_circle[id_gamma % len(list_of_threshold_gamma)],
