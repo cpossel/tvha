@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 # Define some useful methods for fermionic operators.
 # Since they are added in a monkey patch fashion, print a warning.
-logger.warning(
+logger.info(
     "Monkey patching some methods to class '%s.FermionicOp' (see file '%s'). "
     "In long term these methods should probably be added to the official Qiskit code...",
     FermionicOp.__module__,
