@@ -8,16 +8,19 @@ readme = "README.md"
 requires-python = ">=3.13"
 dynamic = ["version"]
 dependencies = [
+    "computation_cache @ git+https://gitlab.cc-asp.fraunhofer.de/qc/computation_cache.git@v0.3",
     "matplotlib>=3.10",
     "nlopt>=2.9",
     "numpy>=2.2",
     "opt_einsum>=3.4",
-    "pandas>=2.2",
+    "pandas>=3.0",
     "pyjson5>=1.6",
     "pyscf>=2.9;sys_platform=='linux'",
+    "ruamel.yaml>=0.19.1",
     "qiskit>=1.4,<2",
     "qiskit_algorithms>=0.3.1",
-    "qiskit_machine_learning>=0.9",
+    # "qiskit_machine_learning>=0.9", # not compatible with qiskit<2
+    "qiskit-machine-learning@git+https://github.com/qiskit-community/qiskit-machine-learning.git@2ecf05642b16a1003d91de0508ed961308753889",
     "qiskit_nature>=0.7",
     "tqdm>=4.67",
 ]
@@ -34,7 +37,7 @@ develop = [
 repository = "https://github.com/cpossel/tvha"
 
 [tool.setuptools]
-py-modules = ["tvha"]
+packages = ["tvha"]
 
 [tool.setuptools_scm]
 write_to = "tvha/__version__.py"

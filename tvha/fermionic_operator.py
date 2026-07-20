@@ -12,12 +12,15 @@ logger = logging.getLogger(__name__)
 
 # Define some useful methods for fermionic operators.
 # Since they are added in a monkey patch fashion, print a warning.
-logger.warning(
+logger.info(
     "Monkey patching some methods to class '%s.FermionicOp' (see file '%s'). "
     "In long term these methods should probably be added to the official Qiskit code...",
     FermionicOp.__module__,
     __file__,
 )
+# TODO: Migrate the whole code to qiskit v2.4 and qiskit nature v0.8;
+# then try to replace some of these monkey-patched functions,
+# especially get_compressed_hamiltonian by qiskit_nature.second_q.operators.symmetric_two_body.fold
 
 
 def _add_function_to_class(function: Callable, cls: type, is_static: bool = False) -> None:
@@ -152,7 +155,7 @@ def get_compressed_hamiltonian(self: FermionicOp) -> FermionicOp:
 
     The Hamiltonian's information content is equivalent to the one from
     FermionicOp.get_antisymmetrized_hamiltonian().
-    The comporessed Hamiltonian representation is not antisymmetric but yields the same
+    The compressed Hamiltonian representation is not antisymmetric but yields the same
     Pauli strings/qubit operator after mapping as the antisymmetrized Hamiltonian.
 
     Two-body operators a†_i a†_j a_k a_l are antisymmetrized then redundant ones merged;
@@ -350,8 +353,7 @@ def get_permuted_label(label: str) -> tuple[str, bool]:
         switch_sign = not switch_sign
     # Rebuild the label
     label_permuted = (
-        f"{op[0][0]}_{op[0][1]} {op[1][0]}_{op[1][1]} "
-        f"{op[2][0]}_{op[2][1]} {op[3][0]}_{op[3][1]}"
+        f"{op[0][0]}_{op[0][1]} {op[1][0]}_{op[1][1]} {op[2][0]}_{op[2][1]} {op[3][0]}_{op[3][1]}"
     )
     return label_permuted, switch_sign
 

@@ -26,6 +26,8 @@ from tvha.fermionic_operator import FermionicOp
 
 logger = logging.getLogger(__name__)
 
+# TODO: switch to parity mapper for future calculations / enable 2-qubit reduction
+
 
 class VariationalHamiltonianAnsatz(BlueprintCircuit):
     """Implements truncated Variational Hamiltonian Ansatz (tVHA).
@@ -88,7 +90,7 @@ class VariationalHamiltonianAnsatz(BlueprintCircuit):
             insert_barriers: Whether to insert barriers between different building blocks.
                 Solely for visualization purposes.
         """
-        self._epsilon = 1e-13  # tolerance for floats to be considered equal
+        self._epsilon = 1e-11  # tolerance for floats to be considered equal
         self.problem = problem
         if isinstance(mapper, ParityMapper):
             raise ValueError("ParityMapper is not supported yet.")
@@ -96,11 +98,7 @@ class VariationalHamiltonianAnsatz(BlueprintCircuit):
         self.trotterization_order = trotterization_order
         self._electronic_energy = self.problem.hamiltonian
 
-        if not isinstance(trotter_steps, int) or trotter_steps < 1:
-            raise ValueError(
-                f"Invalid number of layers: {trotter_steps}. Specify a positive integer."
-            )
-        self.trotter_steps = trotter_steps
+        self.trotter_steps = int(trotter_steps)
 
         self.hamilton_operator = self.get_hamilton_operator()
         self.fock_operator = self.get_fock_operator()
@@ -337,7 +335,7 @@ class VariationalHamiltonianAnsatz(BlueprintCircuit):
             raise ValueError(
                 "The truncation threshold must be between zero and one. Check the code for bugs."
             )
-        return tuple(possible_thresholds_gamma.tolist())
+        return tuple(round(threshold, 12) for threshold in possible_thresholds_gamma)
 
     def get_threshold_gamma(self, initial_threshold_gamma: float) -> tuple[int, float]:
         """Gets the final truncation threshold for the tVHA ansatz and its index/ordinal number.

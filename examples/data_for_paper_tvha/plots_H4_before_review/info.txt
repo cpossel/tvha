@@ -1,0 +1,1 @@
+The data in this file is created using 1000 iterations for the optimizer in all scenarios. In the new folder 'plots_H4', 1000*trotter_steps iterations are used.
