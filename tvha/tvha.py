@@ -26,6 +26,8 @@ from tvha.fermionic_operator import FermionicOp
 
 logger = logging.getLogger(__name__)
 
+# TODO: switch to parity mapper for future calculations / enable 2-qubit reduction
+
 
 class VariationalHamiltonianAnsatz(BlueprintCircuit):
     """Implements truncated Variational Hamiltonian Ansatz (tVHA).

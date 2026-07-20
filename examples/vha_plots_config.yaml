@@ -1,5 +1,6 @@
 # VHA Plots Configuration
 # Organized by molecule and plot type
+# Requires ruamel.yaml to properly parse floats in scientific notation
 
 # Info: number of datapoints (i.e. non-Coulomb two-body terms + 1):
 # 5 for H_2, 141 for H_4, 529 for LiH, 13 for CH_2, 43 for NO_3, 13 for CH

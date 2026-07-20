@@ -18,6 +18,9 @@ logger.info(
     FermionicOp.__module__,
     __file__,
 )
+# TODO: Migrate the whole code to qiskit v2.4 and qiskit nature v0.8;
+# then try to replace some of these monkey-patched functions,
+# especially get_compressed_hamiltonian by qiskit_nature.second_q.operators.symmetric_two_body.fold
 
 
 def _add_function_to_class(function: Callable, cls: type, is_static: bool = False) -> None:
